@@ -29,6 +29,7 @@ const MCP_INSTRUCTIONS = `# Agent Instructions
 - Prefer dedicated tools over shell workarounds when dedicated tools exist.
 - Treat runtime tool schemas and descriptions as the source of truth for available arguments, constraints, and operation-specific procedures.
 - For file search, use openclaw_glob to find paths by pattern and openclaw_grep to search file contents with a regular expression; both return bounded results without shell command construction. These tools search project files, not the OpenClaw tool catalog.
+- For unwrapped OpenClaw capabilities, use openclaw_tool_search with concise English keywords, openclaw_tool_describe to inspect an exact schema, and openclaw_dispatch_action to invoke the selected tool. Prefer an existing direct bridge wrapper when it covers the operation; discovery intentionally omits those native tools to preserve wrapper-specific controls.
 - Use openclaw_exec to run commands and openclaw_process to inspect or control a command that returned a sessionId; preserve native execution policy and inspect actual results before reporting success.
 - Follow the instructions provided by each tool; do not assume capabilities that are not exposed.
 - Batch known paths or predictable, independent actions when supported.

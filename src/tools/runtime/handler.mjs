@@ -56,6 +56,22 @@ async function createNativeToolMap() {
   return byName;
 }
 
+export async function listNativeRuntimeTools() {
+  if (!nativeToolsPromise) {
+    nativeToolsPromise = createNativeToolMap().catch((error) => {
+      nativeToolsPromise = undefined;
+      throw error;
+    });
+  }
+  const tools = await nativeToolsPromise;
+  return [...tools.values()].map((tool) => ({
+    name: tool.name,
+    description: tool.description ?? "",
+    parameters: tool.parameters,
+    ...(tool.outputSchema ? { outputSchema: tool.outputSchema } : {}),
+  }));
+}
+
 async function getNativeTool(name) {
   if (!nativeToolsPromise) {
     nativeToolsPromise = createNativeToolMap().catch((error) => {
