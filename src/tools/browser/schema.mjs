@@ -124,6 +124,7 @@ const properties = {
 export const browserToolDefinition = {
   name: "openclaw_browser",
   description: "Control Chrome through OpenClaw. Use action=open or navigate with targetUrl; if Chrome is not running, use open to launch it and open the requested URL. Use snapshot before page interactions, then pass its refs to action=act.",
+  annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: true },
   inputSchema: {
     type: "object",
     properties,
