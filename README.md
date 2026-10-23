@@ -4,7 +4,7 @@
 [![Platform: Windows](https://img.shields.io/badge/platform-Windows-0078D4?logo=windows&logoColor=white)](https://www.microsoft.com/windows)
 [![Protocol: MCP](https://img.shields.io/badge/protocol-MCP-5B5BD6)](https://modelcontextprotocol.io/)
 
-A Windows-focused Model Context Protocol (MCP) bridge that exposes OpenClaw browser, desktop, and file tools directly to ChatGPT through the OpenAI Secure MCP Tunnel, plus bridge-native screenshot rendering and local project search. It exposes `openclaw_browser`, `openclaw_computer`, five file-operation tools, `openclaw_image_render`, `openclaw_glob`, and `openclaw_grep` without routing routine actions through the OpenClaw main agent.
+A Windows-focused Model Context Protocol (MCP) bridge that exposes OpenClaw browser, desktop, and file tools directly to ChatGPT through the OpenAI Secure MCP Tunnel, plus bridge-native screenshot rendering and local project search. It exposes `openclaw_browser`, `openclaw_computer`, five file-operation tools, `openclaw_image_render`, `openclaw_glob`, `openclaw_grep`, `openclaw_exec`, and `openclaw_process` without routing routine actions through the OpenClaw main agent.
 
 The repository also includes Windows lifecycle scripts and a local call monitor for inspecting tool arguments, results, timing, and errors.
 
@@ -16,7 +16,7 @@ The repository also includes Windows lifecycle scripts and a local call monitor 
 
 This project provides a small, Windows-first integration layer between ChatGPT and a local OpenClaw installation. The intent is to keep the public MCP surface explicit and easy to troubleshoot while allowing each native tool to be added independently.
 
-The bridge exposes ten public MCP tools. Browser, Computer, and Files wrap their supported OpenClaw runtime tools; `openclaw_image_render`, `openclaw_glob`, and `openclaw_grep` are bridge-native capabilities. File search runs directly against the local filesystem without constructing shell commands and is separate from any future OpenClaw tool-catalog discovery capability.
+The bridge exposes twelve public MCP tools. Browser, Computer, and Files wrap their supported OpenClaw runtime tools; `openclaw_image_render`, `openclaw_glob`, and `openclaw_grep` are bridge-native capabilities; `openclaw_exec` and `openclaw_process` wrap OpenClaw's native runtime tools. File search runs directly against the local filesystem without constructing shell commands and is separate from any future OpenClaw tool-catalog discovery capability.
 
 ### Core capabilities
 
@@ -122,7 +122,8 @@ chatgpt-openclaw-direct-tools/
 │   │   ├── computer/              # Windows desktop control
 │   │   ├── files/                 # Native OpenClaw file-tool wrappers
 │   │   ├── image-render/          # Optional screenshot viewer
-│   │   └── file-search/           # Local glob and regex content search
+│   │   ├── file-search/           # Local glob and regex content search
+│   │   └── runtime/               # Native exec and process wrappers
 │   ├── openclaw-client.mjs        # Gateway and node invocation helpers
 │   └── server.mjs                 # Local HTTP and MCP server
 ├── tests/

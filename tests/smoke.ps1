@@ -49,10 +49,10 @@ try {
 try {
     $listed = Send-Mcp -Id 2 -Method 'tools/list'
     $toolNames = @($listed.result.tools | ForEach-Object { $_.name })
-    $expectedPublicToolNames = @('openclaw_browser', 'openclaw_computer', 'openclaw_image_render', 'openclaw_ls', 'openclaw_read', 'openclaw_edit', 'openclaw_write', 'openclaw_apply_patch', 'openclaw_glob', 'openclaw_grep')
+    $expectedPublicToolNames = @('openclaw_browser', 'openclaw_computer', 'openclaw_image_render', 'openclaw_ls', 'openclaw_read', 'openclaw_edit', 'openclaw_write', 'openclaw_apply_patch', 'openclaw_glob', 'openclaw_grep', 'openclaw_exec', 'openclaw_process')
     $missingPublicToolNames = @($expectedPublicToolNames | Where-Object { $_ -notin $toolNames })
     $publicToolNamesValid = $toolNames.Count -eq $expectedPublicToolNames.Count -and $missingPublicToolNames.Count -eq 0
-    Assert-Check $publicToolNamesValid 'All ten public MCP tools are exposed' ('Missing: ' + ($missingPublicToolNames -join ', '))
+    Assert-Check $publicToolNamesValid 'All twelve public MCP tools are exposed' ('Missing: ' + ($missingPublicToolNames -join ', '))
 
     $globDefinition = $listed.result.tools | Where-Object { $_.name -eq 'openclaw_glob' } | Select-Object -First 1
     $globSchemaValid = $null -ne $globDefinition -and @($globDefinition.inputSchema.required) -contains 'pattern' -and $globDefinition.annotations.readOnlyHint -eq $true
@@ -61,6 +61,14 @@ try {
     $grepDefinition = $listed.result.tools | Where-Object { $_.name -eq 'openclaw_grep' } | Select-Object -First 1
     $grepSchemaValid = $null -ne $grepDefinition -and @($grepDefinition.inputSchema.required) -contains 'pattern' -and $grepDefinition.inputSchema.properties.include -and $grepDefinition.annotations.readOnlyHint -eq $true
     Assert-Check $grepSchemaValid 'Grep tool exposes regex and include parameters with a read-only annotation'
+
+    $execDefinition = $listed.result.tools | Where-Object { $_.name -eq 'openclaw_exec' } | Select-Object -First 1
+    $execSchemaValid = $null -ne $execDefinition -and @($execDefinition.inputSchema.required) -contains 'command' -and $execDefinition.inputSchema.properties.workdir -and $execDefinition.annotations.openWorldHint -eq $true
+    Assert-Check $execSchemaValid 'Exec tool exposes command/workdir and open-world annotation'
+
+    $processDefinition = $listed.result.tools | Where-Object { $_.name -eq 'openclaw_process' } | Select-Object -First 1
+    $processSchemaValid = $null -ne $processDefinition -and @($processDefinition.inputSchema.required) -contains 'action' -and @($processDefinition.inputSchema.properties.action.enum) -contains 'poll' -and $processDefinition.annotations.openWorldHint -eq $true
+    Assert-Check $processSchemaValid 'Process tool exposes action lifecycle and open-world annotation'
 
     $computerDefinition = $listed.result.tools | Where-Object { $_.name -eq 'openclaw_computer' } | Select-Object -First 1
     $computerLifecycleValid = $null -ne $computerDefinition -and $computerDefinition.description.Contains('executionId') -and $computerDefinition.description.Contains('close_execution') -and $computerDefinition.description.Contains('Batch up to 5 predictable actions')
