@@ -1,6 +1,7 @@
 import { invokeGatewayTool, getRecentGatewayToolErrorLog } from "../../openclaw-client.mjs";
 import { normalizeToolOutput } from "../../mcp/format.mjs";
 import { browserToolDefinition } from "./schema.mjs";
+import { ensurePersonalChromeRunning } from "./chrome-launch.mjs";
 import {
   isBrowserTimeout,
   outputContainsTargetUrl,
@@ -72,11 +73,29 @@ export async function handleBrowserTool(name, args = {}) {
   if (name !== browserToolDefinition.name) return undefined;
 
   const nativeArgs = prepareBrowserArgs(args);
+  let chromeLaunch = { launched: false };
+  if (args.action === "open" && nativeArgs.profile === "chrome") {
+    try {
+      chromeLaunch = await ensurePersonalChromeRunning();
+    } catch (error) {
+      return {
+        isError: true,
+        diagnostics: { stage: "chrome_launch", action: "open" },
+        content: [{
+          type: "text",
+          text: JSON.stringify({
+            type: "chrome_launch_failed",
+            message: error instanceof Error ? error.message : String(error),
+          }, null, 2),
+        }],
+      };
+    }
+  }
+
   const startedAt = Date.now();
   const result = await invokeGatewayTool("browser", nativeArgs);
   const nativeErrors = result?.ok ? readNativeErrors(result.output) : [];
   const failed = !result?.ok || nativeErrors.length > 0;
-
   if (args.action === "open" && failed && isBrowserTimeout(result)) {
     const recovered = await reconcileTimedOutOpen(args, nativeArgs, result);
     if (recovered) return recovered;
@@ -92,12 +111,18 @@ export async function handleBrowserTool(name, args = {}) {
         action: args.action ?? null,
         kind: args.kind ?? null,
         elapsedMs: result?.error?.elapsedMs ?? null,
+        ...(chromeLaunch.launched ? { chromeAutoLaunched: true, chromeProfileDirectory: chromeLaunch.profileDirectory } : {}),
       },
     };
   }
 
   if (nativeErrors.length === 0) {
-    return { ...response, diagnostics: result.diagnostics ?? null };
+    return {
+      ...response,
+      diagnostics: chromeLaunch.launched
+        ? { ...(result.diagnostics ?? {}), chromeAutoLaunched: true, chromeProfileDirectory: chromeLaunch.profileDirectory }
+        : result.diagnostics ?? null,
+    };
   }
 
   const diagnostics = {

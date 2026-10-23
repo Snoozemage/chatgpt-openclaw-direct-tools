@@ -50,7 +50,7 @@ export async function handleMcpRequest(req, res) {
           protocolVersion: typeof requested === "string" ? requested : "2025-03-26",
           capabilities: { tools: {} },
           serverInfo: { name: "openclaw-chatgpt-bridge", version: "0.1.0" },
-          instructions: "The public MCP surface currently exposes one per-tool module: openclaw_browser. It mirrors the full native browser action list available in this installed OpenClaw version; use action from its schema rather than discovering each action first. The profile defaults to chrome, the installed browser extension, so it does not silently switch to the isolated openclaw browser. For UI work, use snapshot and then act with refs from that same tab. Runtime errors are returned for troubleshooting. New tools will be grouped under src/tools/<tool>/ only after their native schema/routing is established.",
+          instructions: "The public MCP surface currently exposes one tool: openclaw_browser. Choose action and provide only the arguments needed for the requested browser task. The bridge applies internal defaults and pins profile-dependent actions to profile=chrome; do not supply profile, browser or systemProfile selectors. For UI work, use snapshot and then act with refs from that same tab. Runtime errors are returned for troubleshooting. New tools will be grouped under src/tools/<tool>/ only after their native schema and routing are established.",
         };
         break;
       }

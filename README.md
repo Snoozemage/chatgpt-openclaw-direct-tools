@@ -58,13 +58,14 @@ The Browser feature lives under `src/tools/browser/`. Its schema describes the M
 
 The exposed tool is named `openclaw_browser`. It forwards native Browser actions through Gateway and returns runtime results or errors to the caller.
 
-- The default browser profile is **`chrome`**, which uses the installed browser extension.
-- Use **`profile: "openclaw"`** only when the isolated OpenClaw browser is specifically intended.
+- Profile-dependent browser actions are pinned internally to **`profile: "chrome"`**. The public schema omits `profile`, `browser`, and `systemProfile` selectors, and the backend strips them if supplied anyway, so callers cannot switch to another browser profile.
+- If `action: "open"` is requested while Chrome is fully closed, the bridge launches Chrome using the last-used profile from the existing local Chrome User Data directory, then forwards the request. This preserves the user's normal profile and its existing sign-in state; it does not create a separate OpenClaw profile. The OpenClaw extension must already be installed in that Chrome profile and be able to connect.
+- Automatic launch applies only to `action: "open"`. Other actions do not start Chrome automatically. If Chrome is already running, the bridge leaves it running and does not spawn another instance.
 - For page interaction, take a snapshot first and use element refs from that snapshot where appropriate.
 - For `action: "act"`, supply the native `kind` and the relevant operation fields. For example, `fill` uses `fields`, while `press` uses `key`.
 - URL schemes, action support, browser availability, and permissions remain controlled by OpenClaw and the browser runtime.
 
-The bridge does not silently rewrite caller-supplied arguments or claim that an operation succeeded when the native runtime reports an error.
+The bridge removes caller-supplied profile selectors, pins profile-dependent actions to `chrome`, and supplies the default timeout for `action: "open"`. Other supported action arguments are forwarded without silent rewriting. It does not claim that an operation succeeded when the native runtime reports an error.
 
 ---
 

@@ -26,7 +26,7 @@ const actProperties = {
   ref: string("Element ref returned by the latest snapshot."),
   selector: string("CSS selector for selector-based actions."),
   text: string("Text to type, or a text condition for wait."),
-  key: string("Key for kind=press. OpenClaw examples include Enter, Escape, Tab and Control+Shift+T; aliases include Return, Esc, Del, Ctrl and Cmd."),
+  key: string("Key for kind=press, such as Enter, Escape, Tab or Control+Shift+T."),
   submit: boolean("Submit after typing where supported."),
   slowly: boolean("Type slowly where supported."),
   doubleClick: boolean("Double-click where supported."),
@@ -41,7 +41,7 @@ const actProperties = {
   values: stringArray("Values to select."),
   fields: {
     type: "array",
-    description: "Fields for kind=fill; each entry identifies an element and value.",
+    description: "For kind=fill, pass an array of objects with ref and value.",
     items: {
       type: "object",
       properties: {
@@ -68,20 +68,13 @@ const actProperties = {
 };
 
 const properties = {
-  action: {
-    type: "string",
-    enum: BROWSER_ACTIONS,
-    description: "Native OpenClaw Browser action to execute.",
-  },
+  action: { type: "string", enum: BROWSER_ACTIONS, description: "Browser action to execute." },
   target: string("Native execution target, where supported."),
   dashboard: string("Browser dashboard selector, where supported."),
   node: string("Paired browser-node selector, where supported."),
-  profile: string("Browser profile. The bridge defaults to chrome for actions that use a profile."),
-  browser: string("Browser engine or profile selector, where supported."),
-  systemProfile: string("Operating-system browser profile selector."),
   into: string("Destination profile for importprofile."),
   domains: stringArray("Domain filters for importprofile."),
-  targetUrl: string("Destination for open or navigate. Pass the URL unchanged; supported schemes and behavior are determined by OpenClaw and the browser."),
+  targetUrl: string("Destination URL for open or navigate."),
   label: string("Optional browser tab label."),
   limit: integer("Maximum number of returned tabs, errors, requests or results."),
   maxChars: integer("Maximum snapshot or text output size."),
@@ -111,12 +104,12 @@ const properties = {
   dialogId: string("Target dialog ID."),
   accept: boolean("Accept or dismiss a dialog."),
   promptText: string("Text for a prompt dialog."),
-  kind: { type: "string", enum: BROWSER_ACT_KINDS, description: "BrowserAct operation for action=act." },
+  kind: { type: "string", enum: BROWSER_ACT_KINDS, description: "Operation to perform for action=act." },
   ...actProperties,
-  timeoutMs: integer("Timeout in milliseconds, where supported by the native action. For action=open, defaults to 10000 unless explicitly provided."),
+  timeoutMs: integer("Timeout in milliseconds, where supported by the native action."),
   actions: {
     type: "array",
-    description: "Ordered BrowserAct steps for kind=batch.",
+    description: "Ordered steps for kind=batch.",
     items: {
       type: "object",
       properties: {
@@ -130,14 +123,7 @@ const properties = {
 
 export const browserToolDefinition = {
   name: "openclaw_browser",
-  description: [
-    "Forwards the requested Browser action and arguments to the installed OpenClaw Browser tool through Gateway /tools/invoke.",
-    "The bridge does not duplicate Browser payload validation or rewrite supplied values. It supplies profile=chrome when omitted for profile-dependent actions and defaults action=open to a 10-second timeout unless timeoutMs is explicitly provided. OpenClaw remains authoritative for supported parameters, URL schemes, keyboard input, profiles and action behavior; native errors are returned for troubleshooting.",
-    "Use snapshot before interacting with page elements, then use refs from that snapshot. Use targetUrl for open/navigate and kind plus the relevant fields for action=act.",
-    "Common act fields: click/hover/scrollIntoView/select use ref or selector; type uses ref or selector plus text; press uses key; clickCoords uses x and y; drag uses startRef/startSelector and endRef/endSelector; fill uses fields with a ref and value; resize uses width and height; wait uses a supported condition; evaluate uses fn; batch uses actions.",
-    "Examples: { action: 'act', kind: 'press', key: 'Enter' }; { action: 'act', kind: 'fill', fields: [{ ref: 'e1', value: 'example' }] }.",
-    "The bridge defaults to profile=chrome for profile-dependent actions. Select profile=openclaw only when the isolated browser is intended.",
-  ].join(" "),
+  description: "Control Chrome through OpenClaw. Use action=open or navigate with targetUrl; if Chrome is not running, use open to launch it and open the requested URL. Use snapshot before page interactions, then pass its refs to action=act.",
   inputSchema: {
     type: "object",
     properties,

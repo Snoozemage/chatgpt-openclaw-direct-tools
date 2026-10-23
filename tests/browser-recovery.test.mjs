@@ -13,7 +13,12 @@ test("open gets a short default timeout while explicit timeout values are preser
     { action: "open", targetUrl: "https://example.com", profile: "chrome", timeoutMs: DEFAULT_OPEN_TIMEOUT_MS },
   );
   assert.equal(prepareBrowserArgs({ action: "open", timeoutMs: 30_000 }).timeoutMs, 30_000);
-  assert.deepEqual(prepareBrowserArgs({ action: "doctor" }), { action: "doctor" });
+  assert.deepEqual(prepareBrowserArgs({ action: "open", profile: "openclaw", browser: "openclaw", systemProfile: "Other", targetUrl: "https://example.com" }), {
+    action: "open", targetUrl: "https://example.com", profile: "chrome", timeoutMs: DEFAULT_OPEN_TIMEOUT_MS,
+  });
+  assert.deepEqual(prepareBrowserArgs({ action: "tabs", profile: "openclaw", browser: "openclaw", systemProfile: "Other" }), { action: "tabs", profile: "chrome" });
+  assert.deepEqual(prepareBrowserArgs({ action: "doctor", profile: "openclaw", browser: "openclaw", systemProfile: "Other" }), { action: "doctor" });
+  assert.deepEqual(prepareBrowserArgs({ action: "profiles", profile: "openclaw" }), { action: "profiles" });
 });
 
 test("timeout detection uses error wording, not the presence of a timeoutMs parameter", () => {

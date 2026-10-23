@@ -4,9 +4,10 @@ export const DEFAULT_OPEN_TIMEOUT_MS = 10_000;
 export const OPEN_RECOVERY_PROBE_TIMEOUT_MS = 5_000;
 
 export function prepareBrowserArgs(args = {}) {
-  const nativeArgs = args.profile || PROFILE_INDEPENDENT_ACTIONS.has(args.action)
-    ? args
-    : { ...args, profile: "chrome" };
+  const { profile: _profile, browser: _browser, systemProfile: _systemProfile, ...forwardedArgs } = args;
+  const nativeArgs = PROFILE_INDEPENDENT_ACTIONS.has(args.action)
+    ? forwardedArgs
+    : { ...forwardedArgs, profile: "chrome" };
 
   if (args.action === "open" && args.timeoutMs === undefined) {
     return { ...nativeArgs, timeoutMs: DEFAULT_OPEN_TIMEOUT_MS };
