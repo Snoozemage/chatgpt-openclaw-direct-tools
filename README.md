@@ -4,7 +4,7 @@
 [![Platform: Windows](https://img.shields.io/badge/platform-Windows-0078D4?logo=windows&logoColor=white)](https://www.microsoft.com/windows)
 [![Protocol: MCP](https://img.shields.io/badge/protocol-MCP-5B5BD6)](https://modelcontextprotocol.io/)
 
-A Windows-focused Model Context Protocol (MCP) bridge that exposes native OpenClaw tools directly to ChatGPT through the OpenAI Secure MCP Tunnel. It exposes `openclaw_browser` for browser operations and `openclaw_computer` for Windows desktop control through the paired OpenClaw computer node, without routing routine actions through the OpenClaw main agent.
+A Windows-focused Model Context Protocol (MCP) bridge that exposes native OpenClaw tools directly to ChatGPT through the OpenAI Secure MCP Tunnel. It exposes `openclaw_browser` for browser operations, `openclaw_computer` for Windows desktop control through the paired OpenClaw computer node, and `openclaw_image_render` for explicitly rendering a captured screenshot through an MCP App UI, without routing routine actions through the OpenClaw main agent.
 
 The repository also includes Windows lifecycle scripts and a local call monitor for inspecting tool arguments, results, timing, and errors.
 
@@ -16,7 +16,7 @@ The repository also includes Windows lifecycle scripts and a local call monitor 
 
 This project provides a small, Windows-first integration layer between ChatGPT and a local OpenClaw installation. The intent is to keep the public MCP surface explicit and easy to troubleshoot while allowing each native tool to be added independently.
 
-The bridge currently exposes two public MCP tools: `openclaw_browser` and `openclaw_computer`. Each tool is implemented independently after inspecting its native OpenClaw contract.
+The bridge exposes three public MCP tools: `openclaw_browser`, `openclaw_computer`, and `openclaw_image_render`. The image-render tool is bridge-native; it does not invoke a native OpenClaw action.
 
 ### Core capabilities
 
@@ -71,6 +71,10 @@ The bridge removes caller-supplied profile selectors, pins profile-dependent act
 ## 4. Desktop Computer Tool
 
 The exposed tool is named `openclaw_computer`. Use `action: "snapshot"` to capture the current screen, then use `left_click`, `type`, `key`, `scroll`, `list_windows`, or accessibility actions as needed. The snapshot returns an `executionId` and `displayFrameId`; the bridge keeps that OpenClaw execution alive across MCP calls and reuses it for subsequent actions on the active desktop session. Pass the latest `displayFrameId` with coordinate-based actions and take a fresh snapshot after the screen changes. Use `action: "batch"` with an ordered `actions` array to execute up to 5 desktop actions sequentially in one MCP request. The LLM should batch only steps predictable from the latest observation and use a shorter batch when the next step depends on inspecting a changed screen; the five-step cap is a maximum, not a target. The bridge still invokes each native action separately, so batch reduces LLM/MCP round-trips but does not remove per-action Gateway latency. By default, a batch stops on the first error; set `stopOnError: false` to continue and receive per-action results. Nested batches and `close_execution` inside a batch are unsupported; if a batch includes `snapshot`, it must be the final action. Call `action: "close_execution"` when the interaction is complete; if the caller does not close it, the bridge closes an idle execution after five minutes. The handler routes screenshots to `screen.snapshot` and desktop actions to `computer.act`, filters arguments to the native fields supported by each action, and serializes desktop operations to prevent overlapping input sequences. The paired node configured by `OPENCLAW_COMPUTER_NODE` (default: `OpenClaw Windows CUA`) must be connected and approved. This tool controls desktop UI; use `openclaw_browser` for browser-tab and DOM-level interactions.
+
+### Optional screenshot rendering in ChatGPT
+
+A successful `openclaw_computer` call with `action: "snapshot"` preserves the image content for model vision and adds a short `screenshot_ref`. The bridge stores a copy in memory for up to five minutes (maximum 12 cached screenshots). Call `openclaw_image_render` with that reference only when the screenshot should be shown in the chat UI. The render tool attaches the registered `ui://openclaw/image-render/v4.html` MCP App and sends the image bytes as tool-result `_meta`, rather than asking the model to copy a long Base64 string. References expire on timeout, cache eviction, or bridge restart. Hosts that do not support MCP Apps may show only the text fallback.
 
 ---
 
