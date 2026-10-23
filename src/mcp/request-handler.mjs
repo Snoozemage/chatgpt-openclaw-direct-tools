@@ -28,6 +28,7 @@ const MCP_INSTRUCTIONS = `# Agent Instructions
 - Use the most specific available tool that directly fits the operation.
 - Prefer dedicated tools over shell workarounds when dedicated tools exist.
 - Treat runtime tool schemas and descriptions as the source of truth for available arguments, constraints, and operation-specific procedures.
+- For file search, use openclaw_glob to find paths by pattern and openclaw_grep to search file contents with a regular expression; both return bounded results without shell command construction. These tools search project files, not the OpenClaw tool catalog.
 - Follow the instructions provided by each tool; do not assume capabilities that are not exposed.
 - Batch known paths or predictable, independent actions when supported.
 - Observe results before proceeding whenever the next action depends on the outcome of the previous one.

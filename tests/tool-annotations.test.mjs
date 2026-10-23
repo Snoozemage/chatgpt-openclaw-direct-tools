@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { toolDefinitions } from "../src/mcp/tool-definitions.mjs";
 
 test("public MCP tools declare accurate read-only and risk annotations", () => {
-  const readOnlyNames = new Set(["openclaw_ls", "openclaw_read", "openclaw_image_render"]);
+  const readOnlyNames = new Set(["openclaw_ls", "openclaw_read", "openclaw_image_render", "openclaw_glob", "openclaw_grep"]);
   const destructiveNames = new Set(["openclaw_edit", "openclaw_write", "openclaw_apply_patch", "openclaw_browser", "openclaw_computer"]);
 
   assert.equal(toolDefinitions.length, readOnlyNames.size + destructiveNames.size);

@@ -4,7 +4,7 @@
 [![Platform: Windows](https://img.shields.io/badge/platform-Windows-0078D4?logo=windows&logoColor=white)](https://www.microsoft.com/windows)
 [![Protocol: MCP](https://img.shields.io/badge/protocol-MCP-5B5BD6)](https://modelcontextprotocol.io/)
 
-A Windows-focused Model Context Protocol (MCP) bridge that exposes native OpenClaw tools directly to ChatGPT through the OpenAI Secure MCP Tunnel. It exposes `openclaw_browser` for browser operations, `openclaw_computer` for Windows desktop control through the paired OpenClaw computer node, and `openclaw_image_render` for explicitly rendering a captured screenshot through an MCP App UI, without routing routine actions through the OpenClaw main agent.
+A Windows-focused Model Context Protocol (MCP) bridge that exposes OpenClaw browser, desktop, and file tools directly to ChatGPT through the OpenAI Secure MCP Tunnel, plus bridge-native screenshot rendering and local project search. It exposes `openclaw_browser`, `openclaw_computer`, five file-operation tools, `openclaw_image_render`, `openclaw_glob`, and `openclaw_grep` without routing routine actions through the OpenClaw main agent.
 
 The repository also includes Windows lifecycle scripts and a local call monitor for inspecting tool arguments, results, timing, and errors.
 
@@ -16,13 +16,14 @@ The repository also includes Windows lifecycle scripts and a local call monitor 
 
 This project provides a small, Windows-first integration layer between ChatGPT and a local OpenClaw installation. The intent is to keep the public MCP surface explicit and easy to troubleshoot while allowing each native tool to be added independently.
 
-The bridge exposes three public MCP tools: `openclaw_browser`, `openclaw_computer`, and `openclaw_image_render`. The image-render tool is bridge-native; it does not invoke a native OpenClaw action.
+The bridge exposes ten public MCP tools. Browser, Computer, and Files wrap their supported OpenClaw runtime tools; `openclaw_image_render`, `openclaw_glob`, and `openclaw_grep` are bridge-native capabilities. File search runs directly against the local filesystem without constructing shell commands and is separate from any future OpenClaw tool-catalog discovery capability.
 
 ### Core capabilities
 
 - **Native Browser access** — forward Browser actions to OpenClaw Gateway's `/tools/invoke` endpoint.
 - **Desktop computer control** — invoke `computer.act` and `screen.snapshot` on the paired OpenClaw Windows computer node.
-- **Schema-led tool discovery** — expose supported browser and desktop action vocabularies to the MCP client.
+- **Schema-led tool discovery** — expose supported browser, desktop, and file-operation contracts to the MCP client.
+- **Local project search** — `openclaw_glob` finds paths by glob pattern; `openclaw_grep` searches matching file lines with regular expressions and reports line numbers.
 - **Live call monitor** — inspect running, successful, and failed calls, including arguments, output, duration, and available diagnostics.
 - **Windows lifecycle management** — configure, start, inspect, and stop bridge-related processes with PowerShell scripts.
 - **Runtime diagnostics** — retain native tool errors and attach relevant Gateway log context when invocation fails.
@@ -117,10 +118,11 @@ chatgpt-openclaw-direct-tools/
 │   │   ├── events.mjs             # In-memory event stream
 │   │   └── index.html             # Local monitor UI
 │   ├── tools/
-│   │   └── browser/
-│   │       ├── handler.mjs        # Browser invocation handler and timeout recovery
-│   │       ├── recovery.mjs       # Open timeout policy and tab-state reconciliation
-│   │       └── schema.mjs         # Browser MCP schema
+│   │   ├── browser/               # Browser invocation, recovery, and schema
+│   │   ├── computer/              # Windows desktop control
+│   │   ├── files/                 # Native OpenClaw file-tool wrappers
+│   │   ├── image-render/          # Optional screenshot viewer
+│   │   └── file-search/           # Local glob and regex content search
 │   ├── openclaw-client.mjs        # Gateway and node invocation helpers
 │   └── server.mjs                 # Local HTTP and MCP server
 ├── tests/

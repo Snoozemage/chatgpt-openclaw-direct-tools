@@ -49,10 +49,18 @@ try {
 try {
     $listed = Send-Mcp -Id 2 -Method 'tools/list'
     $toolNames = @($listed.result.tools | ForEach-Object { $_.name })
-    $expectedPublicToolNames = @('openclaw_browser', 'openclaw_computer', 'openclaw_image_render', 'openclaw_ls', 'openclaw_read', 'openclaw_edit', 'openclaw_write', 'openclaw_apply_patch')
+    $expectedPublicToolNames = @('openclaw_browser', 'openclaw_computer', 'openclaw_image_render', 'openclaw_ls', 'openclaw_read', 'openclaw_edit', 'openclaw_write', 'openclaw_apply_patch', 'openclaw_glob', 'openclaw_grep')
     $missingPublicToolNames = @($expectedPublicToolNames | Where-Object { $_ -notin $toolNames })
     $publicToolNamesValid = $toolNames.Count -eq $expectedPublicToolNames.Count -and $missingPublicToolNames.Count -eq 0
-    Assert-Check $publicToolNamesValid 'Browser, Computer, and Image Render tools are publicly exposed' ('Missing: ' + ($missingPublicToolNames -join ', '))
+    Assert-Check $publicToolNamesValid 'All ten public MCP tools are exposed' ('Missing: ' + ($missingPublicToolNames -join ', '))
+
+    $globDefinition = $listed.result.tools | Where-Object { $_.name -eq 'openclaw_glob' } | Select-Object -First 1
+    $globSchemaValid = $null -ne $globDefinition -and @($globDefinition.inputSchema.required) -contains 'pattern' -and $globDefinition.annotations.readOnlyHint -eq $true
+    Assert-Check $globSchemaValid 'Glob tool exposes a required pattern and read-only annotation'
+
+    $grepDefinition = $listed.result.tools | Where-Object { $_.name -eq 'openclaw_grep' } | Select-Object -First 1
+    $grepSchemaValid = $null -ne $grepDefinition -and @($grepDefinition.inputSchema.required) -contains 'pattern' -and $grepDefinition.inputSchema.properties.include -and $grepDefinition.annotations.readOnlyHint -eq $true
+    Assert-Check $grepSchemaValid 'Grep tool exposes regex and include parameters with a read-only annotation'
 
     $computerDefinition = $listed.result.tools | Where-Object { $_.name -eq 'openclaw_computer' } | Select-Object -First 1
     $computerLifecycleValid = $null -ne $computerDefinition -and $computerDefinition.description.Contains('executionId') -and $computerDefinition.description.Contains('close_execution') -and $computerDefinition.description.Contains('Batch up to 5 predictable actions')
