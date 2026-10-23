@@ -66,7 +66,9 @@ The exposed tool is named `openclaw_browser`. It forwards native Browser actions
 
 The `user` profile must be prepared once in Chrome: open `chrome://inspect/#remote-debugging`, enable remote debugging, then accept Chrome's attach-consent prompt when OpenClaw asks. OpenClaw attaches to Chrome; it does not launch the existing-session browser for you.
 
-**Capability trade-off:** the existing-session Chrome DevTools MCP driver supports common tab, snapshot, navigation, and interaction workflows, but not every action available in the extension driver. In particular, batch actions, PDF export, download interception, and response-body retrieval require a managed/raw-CDP profile. This branch is a test of the direct attach path, not a guarantee of more capabilities than the extension.
+**Capability limits:** the existing-session Chrome DevTools MCP driver supports common tab, snapshot, navigation, and interaction workflows. Batch actions, PDF export, download interception, response-body retrieval, and the Playwright-backed `requests`, `errors`, `text`, and `emulate` actions require a managed/Playwright-backed profile.
+
+**Target IDs:** Chrome MCP page handles are process-local. After `open` or `navigate`, call `tabs` again and choose a current `tabId`/`targetId` before taking a snapshot. If a `tab not found` or stale-target error occurs, refresh `tabs` and take a new snapshot instead of reusing an old target ID.
 
 The bridge does not silently rewrite caller-supplied arguments or claim that an operation succeeded when the native runtime reports an error.
 

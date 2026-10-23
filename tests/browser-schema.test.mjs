@@ -31,6 +31,8 @@ test("Browser schema gives actionable usage guidance for common operations", () 
   assert.match(browserToolDefinition.description, /defaults action=open to a 10-second timeout/i);
   assert.match(schema.properties.timeoutMs.description, /defaults to 10000/i);
   assert.match(browserToolDefinition.description, /snapshot before interacting/i);
+  assert.match(browserToolDefinition.description, /call tabs again and choose the current tabId\/targetId before snapshot/i);
+  assert.match(browserToolDefinition.description, /tab-not-found error occurs, refresh tabs and snapshot/i);
   assert.match(browserToolDefinition.description, /clickCoords uses x and y/i);
   assert.match(schema.properties.key.description, /Enter/);
   assert.match(schema.properties.targetUrl.description, /schemes/i);
