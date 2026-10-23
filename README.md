@@ -50,7 +50,7 @@ Installed browser profile / extension
 
 The bridge serves MCP requests at `/mcp`, a health endpoint at `/healthz`, and the local monitor at `/monitor`. Tool-call events are streamed to the monitor over Server-Sent Events (SSE).
 
-The Browser feature lives under `src/tools/browser/`. Its schema describes the MCP-facing contract, while its handler supplies the documented default profile when omitted and forwards the request. Browser-specific payload validation remains the responsibility of the native OpenClaw runtime.
+The Browser feature lives under `src/tools/browser/`. Its schema describes the MCP-facing contract, while its handler supplies the documented default profile and applies a **10-second default timeout** to `action: "open"` when the caller does not specify `timeoutMs`. Browser-specific payload validation remains the responsibility of the native OpenClaw runtime. If an open operation times out, the bridge checks the current tab list once; it reports success only if the requested URL is observed, and never retries the open automatically.
 
 ---
 
@@ -108,11 +108,13 @@ chatgpt-openclaw-direct-tools/
 │   │   └── index.html             # Local monitor UI
 │   ├── tools/
 │   │   └── browser/
-│   │       ├── handler.mjs        # Browser invocation handler
+│   │       ├── handler.mjs        # Browser invocation handler and timeout recovery
+│   │       ├── recovery.mjs       # Open timeout policy and tab-state reconciliation
 │   │       └── schema.mjs         # Browser MCP schema
 │   ├── openclaw-client.mjs        # Gateway and node invocation helpers
 │   └── server.mjs                 # Local HTTP and MCP server
 ├── tests/
+│   ├── browser-recovery.test.mjs
 │   ├── browser-schema.test.mjs
 │   ├── relay-input-epoch.test.mjs
 │   ├── check-syntax.ps1

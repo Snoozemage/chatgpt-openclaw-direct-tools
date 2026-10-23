@@ -27,7 +27,9 @@ test("Browser schema describes inputs without duplicating runtime validation", (
 
 test("Browser schema gives actionable usage guidance for common operations", () => {
   const schema = browserToolDefinition.inputSchema;
-  assert.match(browserToolDefinition.description, /does not validate Browser payloads or rewrite supplied values/i);
+  assert.match(browserToolDefinition.description, /does not duplicate Browser payload validation or rewrite supplied values/i);
+  assert.match(browserToolDefinition.description, /defaults action=open to a 10-second timeout/i);
+  assert.match(schema.properties.timeoutMs.description, /defaults to 10000/i);
   assert.match(browserToolDefinition.description, /snapshot before interacting/i);
   assert.match(browserToolDefinition.description, /clickCoords uses x and y/i);
   assert.match(schema.properties.key.description, /Enter/);

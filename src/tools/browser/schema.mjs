@@ -113,6 +113,7 @@ const properties = {
   promptText: string("Text for a prompt dialog."),
   kind: { type: "string", enum: BROWSER_ACT_KINDS, description: "BrowserAct operation for action=act." },
   ...actProperties,
+  timeoutMs: integer("Timeout in milliseconds, where supported by the native action. For action=open, defaults to 10000 unless explicitly provided."),
   actions: {
     type: "array",
     description: "Ordered BrowserAct steps for kind=batch.",
@@ -131,7 +132,7 @@ export const browserToolDefinition = {
   name: "openclaw_browser",
   description: [
     "Forwards the requested Browser action and arguments to the installed OpenClaw Browser tool through Gateway /tools/invoke.",
-    "The bridge does not validate Browser payloads or rewrite supplied values; it only supplies the documented default profile when omitted. OpenClaw is authoritative for supported parameters, URL schemes, keyboard input, profiles and action behavior; native errors are returned for troubleshooting.",
+    "The bridge does not duplicate Browser payload validation or rewrite supplied values. It supplies profile=chrome when omitted for profile-dependent actions and defaults action=open to a 10-second timeout unless timeoutMs is explicitly provided. OpenClaw remains authoritative for supported parameters, URL schemes, keyboard input, profiles and action behavior; native errors are returned for troubleshooting.",
     "Use snapshot before interacting with page elements, then use refs from that snapshot. Use targetUrl for open/navigate and kind plus the relevant fields for action=act.",
     "Common act fields: click/hover/scrollIntoView/select use ref or selector; type uses ref or selector plus text; press uses key; clickCoords uses x and y; drag uses startRef/startSelector and endRef/endSelector; fill uses fields with a ref and value; resize uses width and height; wait uses a supported condition; evaluate uses fn; batch uses actions.",
     "Examples: { action: 'act', kind: 'press', key: 'Enter' }; { action: 'act', kind: 'fill', fields: [{ ref: 'e1', value: 'example' }] }.",
