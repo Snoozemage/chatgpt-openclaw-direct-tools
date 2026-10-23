@@ -33,6 +33,6 @@ test("BrowserAct parameter descriptions explain operation-specific inputs", () =
 test("Browser description contains only essential usage guidance", () => {
   assert.equal(
     browserToolDefinition.description,
-    "Control Chrome through OpenClaw. Use action=open or navigate with targetUrl; use snapshot before page interactions, then pass its refs to action=act."
+    "Control Chrome through OpenClaw. Use action=open or navigate with targetUrl; if Chrome is not running, use open to launch it and open the requested URL. Use snapshot before page interactions, then pass its refs to action=act."
   );
 });

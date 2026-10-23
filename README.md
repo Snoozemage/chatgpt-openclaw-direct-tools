@@ -4,7 +4,7 @@
 [![Platform: Windows](https://img.shields.io/badge/platform-Windows-0078D4?logo=windows&logoColor=white)](https://www.microsoft.com/windows)
 [![Protocol: MCP](https://img.shields.io/badge/protocol-MCP-5B5BD6)](https://modelcontextprotocol.io/)
 
-A Windows-focused Model Context Protocol (MCP) bridge that exposes native OpenClaw tools directly to ChatGPT through the OpenAI Secure MCP Tunnel. The current public tool, `openclaw_browser`, forwards browser operations to the installed OpenClaw Gateway without routing routine actions through the OpenClaw main agent.
+A Windows-focused Model Context Protocol (MCP) bridge that exposes native OpenClaw tools directly to ChatGPT through the OpenAI Secure MCP Tunnel. It exposes `openclaw_browser` for browser operations and `openclaw_computer` for Windows desktop control through the paired OpenClaw computer node, without routing routine actions through the OpenClaw main agent.
 
 The repository also includes Windows lifecycle scripts and a local call monitor for inspecting tool arguments, results, timing, and errors.
 
@@ -16,12 +16,13 @@ The repository also includes Windows lifecycle scripts and a local call monitor 
 
 This project provides a small, Windows-first integration layer between ChatGPT and a local OpenClaw installation. The intent is to keep the public MCP surface explicit and easy to troubleshoot while allowing each native tool to be added independently.
 
-The bridge currently exposes **one public MCP tool: `openclaw_browser`**. Additional tools are intended to be introduced incrementally after their native contracts have been inspected.
+The bridge currently exposes two public MCP tools: `openclaw_browser` and `openclaw_computer`. Each tool is implemented independently after inspecting its native OpenClaw contract.
 
 ### Core capabilities
 
 - **Native Browser access** — forward Browser actions to OpenClaw Gateway's `/tools/invoke` endpoint.
-- **Schema-led tool discovery** — expose the current Browser action and BrowserAct operation vocabulary to the MCP client.
+- **Desktop computer control** — invoke `computer.act` and `screen.snapshot` on the paired OpenClaw Windows computer node.
+- **Schema-led tool discovery** — expose supported browser and desktop action vocabularies to the MCP client.
 - **Live call monitor** — inspect running, successful, and failed calls, including arguments, output, duration, and available diagnostics.
 - **Windows lifecycle management** — configure, start, inspect, and stop bridge-related processes with PowerShell scripts.
 - **Runtime diagnostics** — retain native tool errors and attach relevant Gateway log context when invocation fails.
@@ -48,7 +49,7 @@ Native OpenClaw Browser tool
 Installed browser profile / extension
 ```
 
-The bridge serves MCP requests at `/mcp`, a health endpoint at `/healthz`, and the local monitor at `/monitor`. Tool-call events are streamed to the monitor over Server-Sent Events (SSE).
+The bridge serves MCP requests at `/mcp`, a health endpoint at `/healthz`, and the local monitor at `/monitor`. Tool-call events are streamed to the monitor over Server-Sent Events (SSE). Browser calls go through the Gateway HTTP tool-invocation endpoint; desktop calls go through the paired node command interface.
 
 The Browser feature lives under `src/tools/browser/`. Its schema describes the MCP-facing contract, while its handler supplies the documented default profile and applies a **10-second default timeout** to `action: "open"` when the caller does not specify `timeoutMs`. Browser-specific payload validation remains the responsibility of the native OpenClaw runtime. If an open operation times out, the bridge checks the current tab list once; it reports success only if the requested URL is observed, and never retries the open automatically.
 
@@ -67,9 +68,13 @@ The exposed tool is named `openclaw_browser`. It forwards native Browser actions
 
 The bridge removes caller-supplied profile selectors, pins profile-dependent actions to `chrome`, and supplies the default timeout for `action: "open"`. Other supported action arguments are forwarded without silent rewriting. It does not claim that an operation succeeded when the native runtime reports an error.
 
+## 4. Desktop Computer Tool
+
+The exposed tool is named `openclaw_computer`. Use `action: "snapshot"` to capture the current screen, then use `left_click`, `type`, `key`, `scroll`, `list_windows`, or accessibility actions as needed. The handler routes screenshots to `screen.snapshot` and desktop actions to `computer.act`, filtering arguments to the native fields supported by each action. The paired node configured by `OPENCLAW_COMPUTER_NODE` (default: `OpenClaw Windows CUA`) must be connected and approved. This tool controls desktop UI; use `openclaw_browser` for browser-tab and DOM-level interactions.
+
 ---
 
-## 4. Local Call Monitor
+## 5. Local Call Monitor
 
 Open the local monitor at:
 
@@ -117,6 +122,7 @@ chatgpt-openclaw-direct-tools/
 ├── tests/
 │   ├── browser-recovery.test.mjs
 │   ├── browser-schema.test.mjs
+│   ├── computer-tool.test.mjs
 │   ├── relay-input-epoch.test.mjs
 │   ├── check-syntax.ps1
 │   └── smoke.ps1
@@ -132,7 +138,7 @@ chatgpt-openclaw-direct-tools/
 └── README.md
 ```
 
-Public schemas are registered in `src/mcp/tool-definitions.mjs`; their handlers are registered in `src/mcp/tool-dispatcher.mjs`. Each additional native tool should live under `src/tools/<tool>/` and include only the modules its implementation actually needs.
+Public schemas are registered in `src/mcp/tool-definitions.mjs`; their handlers are registered in `src/mcp/tool-dispatcher.mjs`. Each native tool lives under `src/tools/<tool>/` and includes only the modules its implementation needs.
 
 ---
 
