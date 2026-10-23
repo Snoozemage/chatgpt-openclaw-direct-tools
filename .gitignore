@@ -1,0 +1,15 @@
+node_modules/
+.env
+.env.*
+!.env.example
+config.json
+secrets/
+.secrets/
+tunnel-profiles/
+*.secret
+*.pid
+*.log
+logs/
+*.previous
+.DS_Store
+Thumbs.db
