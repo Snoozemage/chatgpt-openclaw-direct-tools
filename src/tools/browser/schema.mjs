@@ -76,7 +76,7 @@ const properties = {
   target: string("Native execution target, where supported."),
   dashboard: string("Browser dashboard selector, where supported."),
   node: string("Paired browser-node selector, where supported."),
-  profile: string("Browser profile. The bridge defaults to chrome for actions that use a profile."),
+  profile: string("Browser profile. This experimental bridge defaults to user (Chrome DevTools MCP existing-session attach) for profile-dependent actions."),
   browser: string("Browser engine or profile selector, where supported."),
   systemProfile: string("Operating-system browser profile selector."),
   into: string("Destination profile for importprofile."),
@@ -132,11 +132,11 @@ export const browserToolDefinition = {
   name: "openclaw_browser",
   description: [
     "Forwards the requested Browser action and arguments to the installed OpenClaw Browser tool through Gateway /tools/invoke.",
-    "The bridge does not duplicate Browser payload validation or rewrite supplied values. It supplies profile=chrome when omitted for profile-dependent actions and defaults action=open to a 10-second timeout unless timeoutMs is explicitly provided. OpenClaw remains authoritative for supported parameters, URL schemes, keyboard input, profiles and action behavior; native errors are returned for troubleshooting.",
+    "The bridge does not duplicate Browser payload validation or rewrite supplied values. It supplies profile=user (Chrome DevTools MCP existing-session attach) when omitted for profile-dependent actions and defaults action=open to a 10-second timeout unless timeoutMs is explicitly provided. OpenClaw remains authoritative for supported parameters, URL schemes, keyboard input, profiles and action behavior; native errors are returned for troubleshooting.",
     "Use snapshot before interacting with page elements, then use refs from that snapshot. Use targetUrl for open/navigate and kind plus the relevant fields for action=act.",
-    "Common act fields: click/hover/scrollIntoView/select use ref or selector; type uses ref or selector plus text; press uses key; clickCoords uses x and y; drag uses startRef/startSelector and endRef/endSelector; fill uses fields with a ref and value; resize uses width and height; wait uses a supported condition; evaluate uses fn; batch uses actions.",
+    "Common act fields: click/hover/scrollIntoView/select use ref or selector; type uses ref or selector plus text; press uses key; clickCoords uses x and y; drag uses startRef/startSelector and endRef/endSelector; fill uses fields with a ref and value; resize uses width and height; wait uses a supported condition; evaluate uses fn. For profile=user, prefer single-step actions; batch, PDF export, download interception, and response-body retrieval require a managed/raw-CDP profile.",
     "Examples: { action: 'act', kind: 'press', key: 'Enter' }; { action: 'act', kind: 'fill', fields: [{ ref: 'e1', value: 'example' }] }.",
-    "The bridge defaults to profile=chrome for profile-dependent actions. Select profile=openclaw only when the isolated browser is intended.",
+    "This experimental bridge defaults to profile=user for the existing signed-in Chrome session through Chrome DevTools MCP, without the OpenClaw extension. Pass profile=chrome to use extension-based control, or profile=openclaw for the isolated browser. Existing-session mode has a smaller supported action set than the extension driver.",
   ].join(" "),
   inputSchema: {
     type: "object",

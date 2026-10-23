@@ -6,7 +6,7 @@ export const OPEN_RECOVERY_PROBE_TIMEOUT_MS = 5_000;
 export function prepareBrowserArgs(args = {}) {
   const nativeArgs = args.profile || PROFILE_INDEPENDENT_ACTIONS.has(args.action)
     ? args
-    : { ...args, profile: "chrome" };
+    : { ...args, profile: "user" };
 
   if (args.action === "open" && args.timeoutMs === undefined) {
     return { ...nativeArgs, timeoutMs: DEFAULT_OPEN_TIMEOUT_MS };

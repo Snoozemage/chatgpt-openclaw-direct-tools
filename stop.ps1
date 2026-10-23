@@ -2,7 +2,7 @@
 param()
 
 $ErrorActionPreference = 'Stop'
-$AppHome = Join-Path $env:LOCALAPPDATA 'OpenClawChatGPTBridge'
+$AppHome = Join-Path $env:LOCALAPPDATA 'OpenClawDirectCDPBridge'
 $ConfigFile = Join-Path $AppHome 'config.json'
 if (-not (Test-Path -LiteralPath $ConfigFile)) { Write-Host 'No local configuration is installed.'; exit 0 }
 $cfg = Get-Content -LiteralPath $ConfigFile -Raw | ConvertFrom-Json

@@ -2,7 +2,7 @@
 param()
 
 $ErrorActionPreference = 'Stop'
-$AppHome = Join-Path $env:LOCALAPPDATA 'OpenClawChatGPTBridge'
+$AppHome = Join-Path $env:LOCALAPPDATA 'OpenClawDirectCDPBridge'
 $LogDir = Join-Path $AppHome 'logs'
 $LogFile = Join-Path $LogDir 'autostart.log'
 $StartScript = Join-Path $PSScriptRoot 'start.ps1'

@@ -17,10 +17,10 @@ Implement tools incrementally, one tool at a time. For each new public tool:
 
 ## Browser-specific decisions
 
-- Default to the existing Chrome extension profile `chrome`; do not silently switch to the isolated `openclaw` profile.
+- On this experimental branch, default to the existing-session profile `user` through OpenClaw's built-in Chrome DevTools MCP attach path. Do not silently fall back to extension profile `chrome` or isolated profile `openclaw`.
 - Preserve the full native Browser action list and BrowserAct kind list from the installed OpenClaw source.
 - Use snapshots and current element refs for UI operations where appropriate.
-- Native permissions, extension attachment, and runtime configuration remain authoritative.
+- Native permissions, Chrome's remote-debugging setting and attach consent, profile availability, and runtime configuration remain authoritative.
 
 ## Next
 

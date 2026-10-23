@@ -1,4 +1,4 @@
-# ChatGPT OpenClaw Direct Tools Bridge
+# ChatGPT OpenClaw Direct CDP Bridge (Experimental Branch)
 
 [![Node.js 20+](https://img.shields.io/badge/Node.js-20%2B-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
 [![Platform: Windows](https://img.shields.io/badge/platform-Windows-0078D4?logo=windows&logoColor=white)](https://www.microsoft.com/windows)
@@ -8,7 +8,7 @@ A Windows-focused Model Context Protocol (MCP) bridge that exposes native OpenCl
 
 The repository also includes Windows lifecycle scripts and a local call monitor for inspecting tool arguments, results, timing, and errors.
 
-> **Direct invocation, native authority.** The bridge forwards Browser requests and preserves OpenClaw runtime errors. It does not bypass OpenClaw permissions, extension attachment, profile availability, or runtime validation.
+> **Experimental direct browser attach.** This branch changes the default from the Chrome extension profile to OpenClaw’s built-in Chrome DevTools MCP existing-session profile (`user`). The `main` branch remains the extension-based version. This branch is experimental and does not bypass OpenClaw permissions or Chrome’s remote-debugging consent.
 
 ---
 
@@ -45,7 +45,7 @@ OpenClaw Gateway /tools/invoke
           |
 Native OpenClaw Browser tool
           |
-Installed browser profile / extension
+Chrome DevTools MCP (existing-session profile `user`)
 ```
 
 The bridge serves MCP requests at `/mcp`, a health endpoint at `/healthz`, and the local monitor at `/monitor`. Tool-call events are streamed to the monitor over Server-Sent Events (SSE).
@@ -58,11 +58,15 @@ The Browser feature lives under `src/tools/browser/`. Its schema describes the M
 
 The exposed tool is named `openclaw_browser`. It forwards native Browser actions through Gateway and returns runtime results or errors to the caller.
 
-- The default browser profile is **`chrome`**, which uses the installed browser extension.
-- Use **`profile: "openclaw"`** only when the isolated OpenClaw browser is specifically intended.
+- The default browser profile is **`user`**, which attaches to the existing signed-in Chrome session through Chrome DevTools MCP and does not rely on the OpenClaw browser extension.
+- Use **`profile: "chrome"`** only when testing the extension-based control path, or **`profile: "openclaw"`** for an isolated OpenClaw-managed browser.
 - For page interaction, take a snapshot first and use element refs from that snapshot where appropriate.
 - For `action: "act"`, supply the native `kind` and the relevant operation fields. For example, `fill` uses `fields`, while `press` uses `key`.
 - URL schemes, action support, browser availability, and permissions remain controlled by OpenClaw and the browser runtime.
+
+The `user` profile must be prepared once in Chrome: open `chrome://inspect/#remote-debugging`, enable remote debugging, then accept Chrome's attach-consent prompt when OpenClaw asks. OpenClaw attaches to Chrome; it does not launch the existing-session browser for you.
+
+**Capability trade-off:** the existing-session Chrome DevTools MCP driver supports common tab, snapshot, navigation, and interaction workflows, but not every action available in the extension driver. In particular, batch actions, PDF export, download interception, and response-body retrieval require a managed/raw-CDP profile. This branch is a test of the direct attach path, not a guarantee of more capabilities than the extension.
 
 The bridge does not silently rewrite caller-supplied arguments or claim that an operation succeeded when the native runtime reports an error.
 
@@ -73,7 +77,7 @@ The bridge does not silently rewrite caller-supplied arguments or claim that an 
 Open the local monitor at:
 
 ```text
-http://127.0.0.1:19002/monitor
+http://127.0.0.1:19003/monitor
 ```
 
 The port can differ if changed during setup.
@@ -142,6 +146,7 @@ Public schemas are registered in `src/mcp/tool-definitions.mjs`; their handlers 
 - Windows and PowerShell.
 - Node.js **20 or later**.
 - An installed and configured OpenClaw runtime and Gateway.
+- Chrome 144 or newer for the built-in `user` existing-session mode; remote debugging must be enabled in `chrome://inspect/#remote-debugging`.
 - An OpenAI Secure MCP Tunnel configuration for the ChatGPT custom MCP connector.
 
 ### Configure the bridge
@@ -157,7 +162,7 @@ Follow the prompts to configure the OpenClaw paths, bridge and Gateway ports, tu
 The default local application directory is:
 
 ```text
-%LOCALAPPDATA%\OpenClawChatGPTBridge\
+%LOCALAPPDATA%\OpenClawDirectCDPBridge\
 ```
 
 It contains the generated configuration, restricted API-key file, tunnel profile, and runtime logs. These files should remain local and must not be committed.
@@ -204,7 +209,7 @@ npm run test:unit
 Run the live smoke suite against a running local bridge:
 
 ```powershell
-npm test -- -BaseUrl http://127.0.0.1:19002
+npm test -- -BaseUrl http://127.0.0.1:19003
 ```
 
 The static check validates JavaScript and PowerShell syntax and checks selected architecture and lifecycle contracts. Unit tests cover the Browser MCP schema and browser relay input-access regressions. The smoke suite exercises live bridge/Gateway behavior; it requires a working local runtime and may depend on the installed OpenClaw configuration.
@@ -218,7 +223,7 @@ A passing local test suite does not establish that every Browser action will wor
 - **Keep the bridge local.** It defaults to loopback; do not expose the bridge or monitor endpoints to an untrusted network.
 - **Never commit secrets.** API keys, Gateway configuration, tunnel profiles, logs, and process PID files belong outside version control.
 - **Treat monitor output as sensitive.** Arguments and results may contain page content or other private data even when best-effort redaction is applied.
-- **Respect native permissions.** Direct MCP invocation is not a permission bypass. OpenClaw policy, browser profile state, extension attachment, and connector permissions still apply.
+- **Respect native permissions.** Direct MCP invocation is not a permission bypass. Existing-session control requires Chrome remote debugging to be enabled and Chrome's attach-consent prompt accepted. Because this mode acts inside the signed-in session, treat it as highly privileged.
 - **Use explicit, incremental tool exposure.** Inspect each native tool's real contract before publishing its schema; preserve the runtime's errors rather than adding bridge-side guesses.
 
 ---

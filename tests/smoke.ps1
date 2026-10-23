@@ -1,5 +1,5 @@
 [CmdletBinding()]
-param([string]$BaseUrl = 'http://127.0.0.1:19002')
+param([string]$BaseUrl = 'http://127.0.0.1:19003')
 
 $ErrorActionPreference = 'Stop'
 $base = $BaseUrl.TrimEnd('/')
@@ -28,7 +28,7 @@ try {
 
 try {
     $initialized = Send-Mcp -Id 1 -Method 'initialize' -Params @{ protocolVersion = '2025-03-26'; capabilities = @{} }
-    Assert-Check ($initialized.result.serverInfo.name -eq 'openclaw-chatgpt-bridge') 'MCP initialize and server identity'
+    Assert-Check ($initialized.result.serverInfo.name -eq 'openclaw-direct-cdp-bridge') 'MCP initialize and server identity'
 } catch { Assert-Check $false 'MCP initialize' $_.Exception.Message }
 
 try {
@@ -52,7 +52,7 @@ try {
     $schemaIsPermissive = $schemaIsPermissive -and $null -eq $schema.properties.targetUrl.format -and $null -eq $schema.properties.targetUrl.pattern
     $schemaIsPermissive = $schemaIsPermissive -and $schema.properties.fields.items.additionalProperties -eq $true
     Assert-Check $schemaIsPermissive 'Browser schema documents parameters without duplicating native payload validation'
-    Assert-Check ($definition.description.Contains('does not validate Browser payloads or rewrite supplied values')) 'Browser instructions explain native runtime ownership'
+    Assert-Check ($definition.description.Contains('does not duplicate Browser payload validation or rewrite supplied values')) 'Browser instructions explain native runtime ownership'
 } catch { Assert-Check $false 'MCP tool schema' $_.Exception.Message }
 
 try {
@@ -87,14 +87,14 @@ try {
 
 try {
     # Regression case: the bridge must not impose an HTTP(S)-only URL policy.
-    $null = Send-Mcp -Id 6 -Method 'tools/call' -Params @{ name = 'openclaw_browser'; arguments = @{ action = 'open'; profile = 'chrome'; targetUrl = 'chrome://extensions' } }
+    $null = Send-Mcp -Id 6 -Method 'tools/call' -Params @{ name = 'openclaw_browser'; arguments = @{ action = 'open'; profile = 'user'; targetUrl = 'chrome://inspect/#remote-debugging' } }
     $eventData = Invoke-RestMethod -Uri ($base + '/api/events') -TimeoutSec 5
     $event = @($eventData.events | Where-Object { $_.requestId -eq '6' }) | Select-Object -Last 1
     $eventJson = ConvertTo-Json -InputObject $event -Depth 20 -Compress
     $reachedGateway = $null -ne $event -and -not $eventJson.Contains('bridge_validation') -and (
         $null -ne $event.diagnostics.httpStatus -or $null -ne $event.diagnostics.elapsedMs
     )
-    Assert-Check $reachedGateway 'chrome://extensions is forwarded to the native Browser runtime'
+    Assert-Check $reachedGateway 'chrome://inspect is forwarded through the user profile to the native Browser runtime'
 } catch { Assert-Check $false 'Internal Chrome URL passthrough' $_.Exception.Message }
 
 try {

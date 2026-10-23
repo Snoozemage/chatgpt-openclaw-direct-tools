@@ -54,7 +54,7 @@ const httpServer = createServer(async (req, res) => {
     return;
   }
   if (req.method === "GET" && pathname === "/healthz") {
-    sendJson(res, 200, { ok: true, server: "openclaw-chatgpt-bridge", version: "0.1.0" });
+    sendJson(res, 200, { ok: true, server: "openclaw-direct-cdp-bridge", version: "0.1.0" });
     return;
   }
   if (pathname !== "/mcp") {

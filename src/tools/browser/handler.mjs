@@ -34,7 +34,7 @@ async function reconcileTimedOutOpen(args, nativeArgs, originalResult) {
   try {
     tabsResult = await invokeGatewayTool("browser", {
       action: "tabs",
-      profile: nativeArgs.profile || "chrome",
+      profile: nativeArgs.profile || "user",
       timeoutMs: OPEN_RECOVERY_PROBE_TIMEOUT_MS,
     });
   } catch {

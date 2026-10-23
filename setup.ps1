@@ -4,22 +4,22 @@ param(
     [string]$OpenClawCliPath,
     [string]$NodePath,
     [string]$TunnelId,
-    [int]$BridgePort = 19002,
+    [int]$BridgePort = 19003,
     [int]$GatewayPort,
     [switch]$ValidateOnly
 )
 
 $ErrorActionPreference = 'Stop'
 $RepoRoot = $PSScriptRoot
-$AppHome = Join-Path $env:LOCALAPPDATA 'OpenClawChatGPTBridge'
+$AppHome = Join-Path $env:LOCALAPPDATA 'OpenClawDirectCDPBridge'
 $ConfigFile = Join-Path $AppHome 'config.json'
 $SecretDir = Join-Path $AppHome 'secrets'
 $SecretFile = Join-Path $SecretDir 'control-plane-api-key.txt'
 $ProfileDir = Join-Path $AppHome 'tunnel-profiles'
-$ProfileName = 'openclaw-chatgpt-bridge'
+$ProfileName = 'openclaw-direct-cdp-bridge'
 $ProfileFile = Join-Path $ProfileDir ($ProfileName + '.yaml')
 $LogDir = Join-Path $AppHome 'logs'
-$TunnelHealthPort = 8081
+$TunnelHealthPort = 8082
 
 function Write-Step([string]$Message) { Write-Host "`n==> $Message" -ForegroundColor Cyan }
 function Read-Default([string]$Prompt, [string]$Default) {
@@ -73,7 +73,7 @@ function Get-OpenAiTunnelClient([string]$ExistingPath) {
     New-Item -ItemType Directory -Force -Path $downloadRoot | Out-Null
     try {
         [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-        $headers = @{ 'User-Agent' = 'openclaw-chatgpt-bridge-setup'; 'Accept' = 'application/vnd.github+json' }
+        $headers = @{ 'User-Agent' = 'openclaw-direct-cdp-bridge-setup'; 'Accept' = 'application/vnd.github+json' }
         $release = Invoke-RestMethod -Uri 'https://api.github.com/repos/openai/tunnel-client/releases/latest' -Headers $headers -TimeoutSec 25
         $asset = $release.assets | Where-Object { $_.name -match ('^tunnel-client-' + [regex]::Escape($release.tag_name) + '-windows-' + $architecture + '\.zip$') } | Select-Object -First 1
         if (-not $asset) { throw "Could not find the official full-client Windows $architecture archive in release $($release.tag_name)." }
@@ -196,7 +196,7 @@ $GatewayPort = [int](Read-Default 'OpenClaw Gateway port' $gatewayDefault)
 $BridgePort = [int](Read-Default 'Local bridge port' $(if ($config.bridgePort) { [string]$config.bridgePort } else { [string]$BridgePort }))
 if ($BridgePort -lt 1024 -or $BridgePort -gt 65535 -or $GatewayPort -lt 1 -or $GatewayPort -gt 65535) { throw 'Gateway and bridge ports must be valid TCP ports.' }
 
-if (-not $TunnelId) { $TunnelId = Read-Default 'Secure MCP Tunnel ID' ([string]$config.tunnelId) }
+if (-not $TunnelId) { $TunnelId = Read-Default 'Dedicated Secure MCP Tunnel ID for the direct-CDP experiment' ([string]$config.tunnelId) }
 if ($TunnelId -notmatch '^tunnel_[A-Za-z0-9_-]{8,}$') { throw 'Tunnel ID format is invalid. Expected an ID beginning with tunnel_.' }
 
 Write-Step 'Locate the official Secure MCP Tunnel client'

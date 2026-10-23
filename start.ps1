@@ -3,7 +3,7 @@ param([switch]$NoBrowser)
 
 $ErrorActionPreference = 'Stop'
 $RepoRoot = $PSScriptRoot
-$AppHome = Join-Path $env:LOCALAPPDATA 'OpenClawChatGPTBridge'
+$AppHome = Join-Path $env:LOCALAPPDATA 'OpenClawDirectCDPBridge'
 $ConfigFile = Join-Path $AppHome 'config.json'
 $GatewayPidFile = Join-Path $AppHome 'gateway.pid'
 $BridgePidFile = Join-Path $AppHome 'bridge.pid'
@@ -84,7 +84,7 @@ if (Test-Port $gatewayPort) {
 
 $base = 'http://127.0.0.1:' + $Cfg.bridgePort
 $health = Get-Json ($base + '/healthz')
-if ($health -and $health.server -eq 'openclaw-chatgpt-bridge') {
+if ($health -and $health.server -eq 'openclaw-direct-cdp-bridge') {
     Write-Host "MCP bridge already running at $base" -ForegroundColor Green
 } else {
     if (Test-Port ([int]$Cfg.bridgePort)) { throw "Bridge port $($Cfg.bridgePort) is occupied by a different process. Change it in local config/setup.ps1." }
