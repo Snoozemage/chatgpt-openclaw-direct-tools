@@ -29,14 +29,19 @@ try {
 try {
     $initialized = Send-Mcp -Id 1 -Method 'initialize' -Params @{ protocolVersion = '2025-03-26'; capabilities = @{} }
     Assert-Check ($initialized.result.serverInfo.name -eq 'openclaw-chatgpt-bridge') 'MCP initialize and server identity'
+    $computerInstructionsValid = $initialized.result.instructions.Contains('executionId') -and $initialized.result.instructions.Contains('close_execution')
+    Assert-Check $computerInstructionsValid 'MCP instructions explain computer execution lifecycle'
 } catch { Assert-Check $false 'MCP initialize' $_.Exception.Message }
 
 try {
     $listed = Send-Mcp -Id 2 -Method 'tools/list'
     $toolNames = @($listed.result.tools | ForEach-Object { $_.name })
-    Assert-Check ($toolNames.Count -eq 1 -and $toolNames[0] -eq 'openclaw_browser') 'Only the Browser tool is publicly exposed'
+    $expectedPublicToolNames = @('openclaw_browser', 'openclaw_computer')
+    $missingPublicToolNames = @($expectedPublicToolNames | Where-Object { $_ -notin $toolNames })
+    $publicToolNamesValid = $toolNames.Count -eq $expectedPublicToolNames.Count -and $missingPublicToolNames.Count -eq 0
+    Assert-Check $publicToolNamesValid 'Browser and Computer tools are publicly exposed' ('Missing: ' + ($missingPublicToolNames -join ', '))
 
-    $definition = $listed.result.tools | Select-Object -First 1
+    $definition = $listed.result.tools | Where-Object { $_.name -eq 'openclaw_browser' } | Select-Object -First 1
     $schema = $definition.inputSchema
     $expectedActions = @('doctor','status','start','stop','profiles','importprofile','tabs','open','focus','close','snapshot','screenshot','navigate','console','requests','errors','text','emulate','pdf','download','waitfordownload','upload','dialog','act')
     $expectedKinds = @('batch','click','clickCoords','type','press','hover','scrollIntoView','drag','select','fill','resize','wait','evaluate','close')
@@ -52,7 +57,19 @@ try {
     $schemaIsPermissive = $schemaIsPermissive -and $null -eq $schema.properties.targetUrl.format -and $null -eq $schema.properties.targetUrl.pattern
     $schemaIsPermissive = $schemaIsPermissive -and $schema.properties.fields.items.additionalProperties -eq $true
     Assert-Check $schemaIsPermissive 'Browser schema documents parameters without duplicating native payload validation'
-    Assert-Check ($definition.description.Contains('does not validate Browser payloads or rewrite supplied values')) 'Browser instructions explain native runtime ownership'
+    $browserGuidanceValid = $definition.description.Contains('Use snapshot before page interactions') -and $definition.description.Contains('pass its refs to action=act')
+    Assert-Check $browserGuidanceValid 'Browser tool documents snapshot-first usage'
+
+    $computerDefinition = $listed.result.tools | Where-Object { $_.name -eq 'openclaw_computer' } | Select-Object -First 1
+    $computerSchema = $computerDefinition.inputSchema
+    $expectedComputerActions = @('snapshot', 'close_execution', 'left_click', 'right_click', 'middle_click', 'double_click', 'triple_click', 'mouse_move', 'left_click_drag', 'left_mouse_down', 'left_mouse_up', 'scroll', 'type', 'key', 'hold_key', 'list_apps', 'list_windows', 'get_accessibility_tree', 'get_cursor_position', 'get_window_state', 'launch_app', 'kill_app', 'bring_to_front', 'set_value', 'invoke_menu', 'zoom')
+    $missingComputerActions = @($expectedComputerActions | Where-Object { $_ -notin @($computerSchema.properties.action.enum) })
+    $computerSchemaValid = $null -ne $computerDefinition -and @($computerSchema.required) -contains 'action' -and $computerSchema.additionalProperties -eq $true
+    $computerSchemaValid = $computerSchemaValid -and $missingComputerActions.Count -eq 0 -and @($computerSchema.properties.action.enum).Count -eq $expectedComputerActions.Count
+    $computerSchemaValid = $computerSchemaValid -and $computerSchema.properties.executionId.pattern.StartsWith('^[0-9a-fA-F]{8}-')
+    Assert-Check $computerSchemaValid 'Computer schema exposes desktop actions and execution lifecycle' ('Missing: ' + ($missingComputerActions -join ', '))
+    $computerGuidanceValid = $computerDefinition.description.Contains('executionId') -and $computerDefinition.description.Contains('displayFrameId') -and $computerDefinition.description.Contains('close_execution')
+    Assert-Check $computerGuidanceValid 'Computer guidance explains execution and frame lifecycle'
 } catch { Assert-Check $false 'MCP tool schema' $_.Exception.Message }
 
 try {

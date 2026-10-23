@@ -50,7 +50,7 @@ export async function handleMcpRequest(req, res) {
           protocolVersion: typeof requested === "string" ? requested : "2025-03-26",
           capabilities: { tools: {} },
           serverInfo: { name: "openclaw-chatgpt-bridge", version: "0.1.0" },
-          instructions: "The public MCP surface exposes openclaw_browser for browser pages and openclaw_computer for desktop UI control. For browser work, use openclaw_browser snapshot before acting with refs from that tab; profile-dependent actions are pinned internally to Chrome. For desktop work, use openclaw_computer action=snapshot first, then use mouse, keyboard, window, or accessibility actions. Desktop control requires the paired OpenClaw computer node to be connected. Native runtime errors are returned for troubleshooting.",
+          instructions: "The public MCP surface exposes openclaw_browser for browser pages and openclaw_computer for desktop UI control. For browser work, use openclaw_browser snapshot before acting with refs from that tab; profile-dependent actions are pinned internally to Chrome. For desktop work, use openclaw_computer action=snapshot first; reuse its executionId for related actions and pass its displayFrameId with coordinate-based actions. Take a fresh snapshot after the screen changes. Call action=close_execution when finished; idle desktop sessions are closed automatically after five minutes. Desktop control requires the paired OpenClaw computer node to be connected. Native runtime errors are returned for troubleshooting.",
         };
         break;
       }
