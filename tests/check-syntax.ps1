@@ -2,9 +2,18 @@ $ErrorActionPreference = 'Stop'
 
 $repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $sourceRoot = Join-Path $repoRoot 'src'
+$javascriptRoots = @(
+    $sourceRoot
+    (Join-Path $repoRoot 'scripts')
+    (Join-Path $repoRoot 'tests')
+) | Where-Object { Test-Path -LiteralPath $_ }
 
-$files = @(Get-ChildItem -LiteralPath $sourceRoot -Recurse -File -Filter '*.mjs')
-if ($files.Count -eq 0) { throw "No .mjs source files found under $sourceRoot" }
+$files = @(
+    foreach ($root in $javascriptRoots) {
+        Get-ChildItem -LiteralPath $root -Recurse -File -Filter '*.mjs'
+    }
+)
+if ($files.Count -eq 0) { throw "No .mjs files found under source, scripts, or tests." }
 
 foreach ($file in $files) {
     Write-Host ("Checking JavaScript syntax: " + $file.FullName)
@@ -14,6 +23,7 @@ foreach ($file in $files) {
 
 $scriptFiles = @(
     Get-ChildItem -LiteralPath $repoRoot -File -Filter '*.ps1'
+    Get-ChildItem -LiteralPath (Join-Path $repoRoot 'scripts') -Recurse -File -Filter '*.ps1'
     Get-ChildItem -LiteralPath (Join-Path $repoRoot 'tests') -Recurse -File -Filter '*.ps1'
 )
 foreach ($script in $scriptFiles) {
