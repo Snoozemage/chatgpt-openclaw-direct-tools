@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { computerNode } from "../../config/runtime.mjs";
 import { invokeNodeCommand } from "../../openclaw-client.mjs";
-import { computerToolDefinition } from "./schema.mjs";
+import { computerToolDefinition, MAX_COMPUTER_BATCH_ACTIONS } from "./schema.mjs";
 
 const DEFAULT_IDLE_TIMEOUT_MS = 5 * 60 * 1000;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -53,10 +53,15 @@ function enqueue(queues, key, operation) {
   return current;
 }
 
+function validateAction(action) {
+  if (action === "snapshot" || action === "close_execution" || ACTION_FIELDS[action]) return undefined;
+  if (action === "batch") return "Nested computer batches are not supported.";
+  return "Unsupported desktop action: " + String(action);
+}
+
 export function createComputerToolHandler({ idleTimeoutMs = DEFAULT_IDLE_TIMEOUT_MS } = {}) {
   // OpenClaw's provider permits one active execution per computer. Keep a single
-  // correlated execution per node, and serialize calls so snapshots and actions
-  // cannot race one another.
+  // correlated execution per node, and serialize operations including whole batches.
   const sessions = new Map();
   const queues = new Map();
 
@@ -126,6 +131,60 @@ export function createComputerToolHandler({ idleTimeoutMs = DEFAULT_IDLE_TIMEOUT
     return result;
   }
 
+  async function performAction(name, args, context) {
+    const { invoke, node, key, timeoutMs } = context;
+    let session = sessions.get(key);
+
+    if (args.action === "close_execution") {
+      if (!session && !args.executionId) {
+        return { content: [{ type: "text", text: "No active computer execution to close." }] };
+      }
+      if (session && args.executionId && args.executionId !== session.executionId) {
+        return toolError("executionId does not match the active computer execution.");
+      }
+      if (!session) {
+        session = { key, node, invoke, executionId: args.executionId, lastUsedAt: Date.now() };
+      }
+      return closeSession(session, "bridge-client-close", timeoutMs);
+    }
+
+    const requestedId = args.executionId;
+    if (session && requestedId && requestedId !== session.executionId) {
+      const closed = await closeSession(session, "bridge-execution-replaced", timeoutMs);
+      if (closed?.isError) return closed;
+      session = undefined;
+    }
+
+    const executionId = requestedId ?? session?.executionId ?? randomUUID();
+    if (!session || session.executionId !== executionId) {
+      session = { key, node, invoke, executionId, lastUsedAt: Date.now(), timer: undefined };
+      sessions.set(key, session);
+    } else {
+      session.node = node;
+      session.invoke = invoke;
+    }
+    session.lastUsedAt = Date.now();
+    scheduleIdleCleanup(session);
+
+    let result;
+    if (args.action === "snapshot") {
+      const params = { ...pick(args, ["screenIndex", "maxWidth", "quality", "format"]), executionId };
+      result = await invoke(node, "screen.snapshot", params, timeoutMs, { executionId });
+    } else {
+      const params = { action: args.action, ...pick(args, ACTION_FIELDS[args.action]), executionId };
+      result = await invoke(node, "computer.act", params, timeoutMs, {
+        executionId,
+        refWidth: args.refWidth,
+      });
+    }
+
+    if (sessions.get(key) === session) {
+      session.lastUsedAt = Date.now();
+      scheduleIdleCleanup(session);
+    }
+    return result;
+  }
+
   return async function handleComputerTool(name, args = {}, dependencies = {}) {
     if (name !== computerToolDefinition.name) return undefined;
 
@@ -133,70 +192,82 @@ export function createComputerToolHandler({ idleTimeoutMs = DEFAULT_IDLE_TIMEOUT
     const node = String(dependencies.node ?? computerNode);
     const key = node;
     const timeoutMs = Number.isInteger(args.timeoutMs) && args.timeoutMs > 0 ? args.timeoutMs : 30000;
-
-    if (args.action !== "snapshot" && args.action !== "close_execution" && !ACTION_FIELDS[args.action]) {
-      return toolError("Unsupported desktop action: " + String(args.action));
-    }
+    const context = { invoke, node, key, timeoutMs };
 
     if (args.executionId !== undefined && !UUID_PATTERN.test(args.executionId)) {
       return toolError("executionId must be the UUID returned by action=snapshot.");
     }
 
-    return enqueue(queues, key, async () => {
-      let session = sessions.get(key);
-
-      if (args.action === "close_execution") {
-        if (!session && !args.executionId) {
-          return { content: [{ type: "text", text: "No active computer execution to close." }] };
+    if (args.action === "batch") {
+      if (!Array.isArray(args.actions) || args.actions.length === 0 || args.actions.length > MAX_COMPUTER_BATCH_ACTIONS) {
+        return toolError("actions must contain between 1 and " + MAX_COMPUTER_BATCH_ACTIONS + " desktop actions.");
+      }
+      for (let index = 0; index < args.actions.length; index += 1) {
+        const step = args.actions[index];
+        if (!step || typeof step !== "object" || Array.isArray(step)) {
+          return toolError("actions[" + index + "] must be an action object.");
         }
-        if (session && args.executionId && args.executionId !== session.executionId) {
-          return toolError("executionId does not match the active computer execution.");
+        const error = validateAction(step.action);
+        if (error) return toolError("actions[" + index + "]: " + error);
+        if (step.action === "close_execution") {
+          return toolError("actions[" + index + "]: close_execution cannot run inside a batch; call it after the batch.");
         }
-        if (!session) {
-          session = { key, node, invoke, executionId: args.executionId, lastUsedAt: Date.now() };
+        if (step.action === "snapshot" && index !== args.actions.length - 1) {
+          return toolError("actions[" + index + "]: snapshot can only be the final batch action; take a snapshot before the batch to choose coordinates.");
         }
-        return closeSession(session, "bridge-client-close", timeoutMs);
+        if (step.executionId !== undefined) {
+          return toolError("actions[" + index + "]: set executionId on the batch request, not on individual actions.");
+        }
       }
 
-      const requestedId = args.executionId;
-      if (session && requestedId && requestedId !== session.executionId) {
-        const closed = await closeSession(session, "bridge-execution-replaced", timeoutMs);
-        if (closed?.isError) return closed;
-        session = undefined;
-      }
+      const stopOnError = args.stopOnError !== false;
+      return enqueue(queues, key, async () => {
+        const results = [];
+        const content = [];
+        let failed = false;
 
-      const executionId = requestedId ?? session?.executionId ?? randomUUID();
-      if (!session || session.executionId !== executionId) {
-        session = { key, node, invoke, executionId, lastUsedAt: Date.now(), timer: undefined };
-        sessions.set(key, session);
-      } else {
-        session.node = node;
-        session.invoke = invoke;
-      }
-      session.lastUsedAt = Date.now();
-      scheduleIdleCleanup(session);
+        for (let index = 0; index < args.actions.length; index += 1) {
+          const step = args.actions[index];
+          const stepArgs = {
+            ...args,
+            ...step,
+            action: step.action,
+            timeoutMs: Number.isInteger(step.timeoutMs) && step.timeoutMs > 0 ? step.timeoutMs : timeoutMs,
+          };
+          delete stepArgs.actions;
+          delete stepArgs.stopOnError;
 
-      let result;
-      if (args.action === "snapshot") {
-        const params = { ...pick(args, ["screenIndex", "maxWidth", "quality", "format"]), executionId };
-        result = await invoke(node, "screen.snapshot", params, timeoutMs, { executionId });
-      } else {
-        const params = { action: args.action, ...pick(args, ACTION_FIELDS[args.action]), executionId };
-        result = await invoke(node, "computer.act", params, timeoutMs, {
-          executionId,
-          refWidth: args.refWidth,
+          let result;
+          try {
+            result = await performAction(name, stepArgs, { ...context, timeoutMs: stepArgs.timeoutMs });
+          } catch (error) {
+            result = toolError(error instanceof Error ? error.message : String(error));
+          }
+
+          const actionFailed = Boolean(result?.isError);
+          failed ||= actionFailed;
+          results.push({ index, action: step.action, isError: actionFailed });
+          content.push({ type: "text", text: "Batch action " + (index + 1) + "/" + args.actions.length + ": " + step.action + (actionFailed ? " — FAILED" : " — completed") });
+          for (const item of result?.content ?? []) content.push(item);
+
+          if (actionFailed && stopOnError) break;
+        }
+
+        const completed = results.length;
+        content.unshift({
+          type: "text",
+          text: "Computer batch finished: " + completed + "/" + args.actions.length + " actions executed; " +
+            results.filter((item) => !item.isError).length + " succeeded, " +
+            results.filter((item) => item.isError).length + " failed. " +
+            (completed < args.actions.length ? "Stopped after the first failure." : ""),
         });
-      }
+        return { content, isError: failed || undefined, structuredContent: { results } };
+      });
+    }
 
-      // Keep the execution alive across separate MCP calls so later actions can
-      // use the same snapshot/observation references. The idle timer is a safety
-      // net for clients that never send close_execution.
-      if (sessions.get(key) === session) {
-        session.lastUsedAt = Date.now();
-        scheduleIdleCleanup(session);
-      }
-      return result;
-    });
+    const error = validateAction(args.action);
+    if (error) return toolError(error);
+    return enqueue(queues, key, () => performAction(name, args, context));
   };
 }
 
