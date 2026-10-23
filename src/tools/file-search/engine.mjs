@@ -1,8 +1,10 @@
-import { readFile, readdir, realpath, stat } from "node:fs/promises";
+import { spawn } from "node:child_process";
+import { glob as nodeGlob, lstat, realpath, stat } from "node:fs/promises";
 import path from "node:path";
+import { createInterface } from "node:readline";
 import { stateDir } from "../../config/runtime.mjs";
 
-export const MAX_SEARCH_ENTRIES = 50_000;
+const MAX_GLOB_MATCHES_TO_SCAN = 50_000;
 export const MAX_SEARCH_RESULTS = 100;
 export const MAX_GREP_FILE_BYTES = 2 * 1024 * 1024;
 export const MAX_GREP_LINE_CHARS = 600;
@@ -10,110 +12,19 @@ export const MAX_GREP_LINE_CHARS = 600;
 const IGNORED_DIRECTORY_NAMES = new Set([".git", "node_modules"]);
 
 function normalizeGlobPattern(pattern) {
-  return pattern.replace(/\\/g, "/").replace(/^\.\//, "");
-}
-
-function findBraceGroup(pattern) {
-  const start = pattern.indexOf("{");
-  if (start < 0) return null;
-  let depth = 0;
-  for (let i = start; i < pattern.length; i += 1) {
-    if (pattern[i] === "{") depth += 1;
-    else if (pattern[i] === "}") {
-      depth -= 1;
-      if (depth === 0) {
-        const body = pattern.slice(start + 1, i);
-        if (!body.includes(",")) return null;
-        const choices = [];
-        let nested = 0;
-        let begin = 0;
-        for (let j = 0; j < body.length; j += 1) {
-          if (body[j] === "{") nested += 1;
-          else if (body[j] === "}") nested -= 1;
-          else if (body[j] === "," && nested === 0) {
-            choices.push(body.slice(begin, j));
-            begin = j + 1;
-          }
-        }
-        choices.push(body.slice(begin));
-        return { start, end: i, choices };
-      }
-    }
-  }
-  return null;
-}
-
-function expandBraces(pattern, maxExpansions = 64) {
-  const pending = [pattern];
-  const expanded = [];
-  while (pending.length > 0) {
-    const next = pending.pop();
-    const group = findBraceGroup(next);
-    if (!group) {
-      expanded.push(next);
-      if (expanded.length > maxExpansions) throw new Error("Glob pattern expands to too many alternatives.");
-      continue;
-    }
-    for (const choice of group.choices) {
-      pending.push(next.slice(0, group.start) + choice + next.slice(group.end + 1));
-      if (pending.length + expanded.length > maxExpansions) {
-        throw new Error("Glob pattern expands to too many alternatives.");
-      }
-    }
-  }
-  return expanded;
-}
-
-function globAlternativeToRegExp(pattern) {
-  let source = "^";
-  for (let index = 0; index < pattern.length; index += 1) {
-    const char = pattern[index];
-    if (char === "*" && pattern[index + 1] === "*") {
-      if (pattern[index + 2] === "/") {
-        source += "(?:.*/)?";
-        index += 2;
-      } else {
-        source += ".*";
-        index += 1;
-      }
-    } else if (char === "*") {
-      source += "[^/]*";
-    } else if (char === "?") {
-      source += "[^/]";
-    } else if (char === "[") {
-      const end = pattern.indexOf("]", index + 1);
-      if (end < 0) {
-        source += "\\[";
-      } else {
-        let body = pattern.slice(index + 1, end);
-        if (body.startsWith("!")) body = "^" + body.slice(1);
-        source += "[" + body.replace(/\\/g, "\\\\") + "]";
-        index = end;
-      }
-    } else {
-      source += /[|\\{}()[\]^$+?.]/.test(char) ? "\\" + char : char;
-    }
-  }
-  source += "$";
-  return new RegExp(source);
-}
-
-export function compileGlob(pattern, { matchBasename = false } = {}) {
   if (typeof pattern !== "string" || pattern.trim().length === 0) {
     throw new TypeError("pattern must be a non-empty string.");
   }
   if (pattern.includes("\0")) throw new TypeError("pattern must not contain NUL.");
-  const normalized = normalizeGlobPattern(pattern.trim());
-  const matchers = expandBraces(normalized).map(globAlternativeToRegExp);
-  return (relativePath) => {
-    const normalizedPath = normalizeGlobPattern(relativePath);
-    if (matchers.some((matcher) => matcher.test(normalizedPath))) return true;
-    if (matchBasename && !normalized.includes("/")) {
-      const basename = path.posix.basename(normalizedPath);
-      return matchers.some((matcher) => matcher.test(basename));
-    }
-    return false;
-  };
+
+  const normalized = pattern.trim().replace(/\\/g, "/").replace(/^(?:\.\/)+/, "");
+  if (path.posix.isAbsolute(normalized) || path.win32.isAbsolute(pattern)) {
+    throw new TypeError("glob pattern must be relative to the search root.");
+  }
+  if (/(^|[/{,])\.\.(?=\/|[,}]|$)/.test(normalized)) {
+    throw new TypeError("glob pattern must not contain '..' path segments.");
+  }
+  return normalized;
 }
 
 function getWorkspaceRoot() {
@@ -147,71 +58,57 @@ export async function resolveSearchPath(requestedPath, { allowFile = false } = {
   return { absolutePath: resolved, isFile: details.isFile() };
 }
 
-export async function collectSearchFiles(rootPath, { maxEntries = MAX_SEARCH_ENTRIES } = {}) {
-  const rootInfo = await stat(rootPath);
-  if (rootInfo.isFile()) {
-    return {
-      files: [{ absolutePath: rootPath, relativePath: path.basename(rootPath), size: rootInfo.size }],
-      scannedEntries: 1,
-      truncated: false,
-    };
-  }
-  if (!rootInfo.isDirectory()) throw new TypeError("Search path must be a file or directory.");
-
-  const files = [];
-  const stack = [rootPath];
-  let scannedEntries = 0;
-  let truncated = false;
-  while (stack.length > 0) {
-    const directory = stack.pop();
-    let entries;
-    try {
-      entries = await readdir(directory, { withFileTypes: true });
-    } catch {
-      continue;
-    }
-    for (const entry of entries) {
-      scannedEntries += 1;
-      if (scannedEntries > maxEntries) {
-        truncated = true;
-        stack.length = 0;
-        break;
-      }
-      const absolutePath = path.join(directory, entry.name);
-      if (entry.isSymbolicLink()) continue;
-      if (entry.isDirectory()) {
-        if (!IGNORED_DIRECTORY_NAMES.has(entry.name)) stack.push(absolutePath);
-        continue;
-      }
-      if (!entry.isFile()) continue;
-      const relativePath = path.relative(rootPath, absolutePath).split(path.sep).join("/");
-      let size = 0;
-      try {
-        size = (await stat(absolutePath)).size;
-      } catch {
-        continue;
-      }
-      files.push({ absolutePath, relativePath, size });
-    }
-  }
-  return { files, scannedEntries: Math.min(scannedEntries, maxEntries), truncated };
+function isWithinRoot(rootPath, candidatePath) {
+  const relative = path.relative(rootPath, candidatePath);
+  return relative === "" || (!path.isAbsolute(relative) && relative !== ".." && !relative.startsWith(".." + path.sep));
 }
 
 export async function globSearch({ pattern, path: requestedPath } = {}) {
-  const matcher = compileGlob(pattern);
+  const normalizedPattern = normalizeGlobPattern(pattern);
   const root = await resolveSearchPath(requestedPath);
-  const collected = await collectSearchFiles(root.absolutePath);
   const matches = [];
-  for (const file of collected.files) {
-    if (!matcher(file.relativePath)) continue;
-    let modifiedAt = 0;
+  let matchesScanned = 0;
+  let scanTruncated = false;
+
+  const excludeIgnoredDirectories = (entry) => {
+    const value = typeof entry === "string"
+      ? entry
+      : entry && typeof entry.name === "string"
+        ? path.join(entry.parentPath ?? entry.path ?? "", entry.name)
+        : String(entry);
+    return value.split(/[\\/]+/).some((segment) => IGNORED_DIRECTORY_NAMES.has(segment));
+  };
+
+  for await (const relativePathValue of nodeGlob(normalizedPattern, {
+    cwd: root.absolutePath,
+    exclude: excludeIgnoredDirectories,
+  })) {
+    matchesScanned += 1;
+    if (matchesScanned > MAX_GLOB_MATCHES_TO_SCAN) {
+      scanTruncated = true;
+      break;
+    }
+
+    const relativePath = String(relativePathValue);
+    const absolutePath = path.resolve(root.absolutePath, relativePath);
+    if (!isWithinRoot(root.absolutePath, absolutePath)) continue;
+
+    let details;
     try {
-      modifiedAt = (await stat(file.absolutePath)).mtimeMs;
+      details = await lstat(absolutePath);
     } catch {
       continue;
     }
-    matches.push({ path: file.absolutePath, relativePath: file.relativePath, modifiedAt });
+    // Keep the previous behavior: return regular files only and never follow symlinks.
+    if (details.isSymbolicLink() || !details.isFile()) continue;
+
+    matches.push({
+      path: absolutePath,
+      relativePath: path.relative(root.absolutePath, absolutePath).split(path.sep).join("/"),
+      modifiedAt: details.mtimeMs,
+    });
   }
+
   matches.sort((left, right) => right.modifiedAt - left.modifiedAt
     || left.path.localeCompare(right.path));
   const limited = matches.slice(0, MAX_SEARCH_RESULTS);
@@ -221,81 +118,180 @@ export async function globSearch({ pattern, path: requestedPath } = {}) {
     matches: limited,
     count: limited.length,
     totalMatchesFound: matches.length,
-    truncated: collected.truncated || matches.length > MAX_SEARCH_RESULTS,
-    scannedEntries: collected.scannedEntries,
+    truncated: scanTruncated || matches.length > MAX_SEARCH_RESULTS,
   };
 }
 
-export async function grepSearch({ pattern, path: requestedPath, include } = {}) {
-  if (typeof pattern !== "string" || pattern.length === 0) {
-    throw new TypeError("pattern must be a non-empty regular expression.");
-  }
-  let matcher;
-  try {
-    matcher = new RegExp(pattern, "u");
-  } catch (error) {
-    const wrapped = new TypeError("pattern is not a valid JavaScript regular expression: " + error.message);
-    wrapped.code = "SEARCH_INVALID_REGEX";
-    throw wrapped;
-  }
-  const includeMatcher = include === undefined ? null : compileGlob(include, { matchBasename: true });
-  const root = await resolveSearchPath(requestedPath, { allowFile: true });
-  const collected = await collectSearchFiles(root.absolutePath);
-  const matches = [];
-  let skippedBinaryFiles = 0;
-  let skippedLargeFiles = 0;
-  let scannedFiles = 0;
-  let truncated = collected.truncated;
+function decodeJsonData(data) {
+  if (typeof data?.text === "string") return data.text;
+  if (typeof data?.bytes === "string") return Buffer.from(data.bytes, "base64").toString("utf8");
+  return "";
+}
 
-  for (const file of collected.files) {
-    if (includeMatcher && !includeMatcher(file.relativePath)) continue;
-    if (file.size > MAX_GREP_FILE_BYTES) {
-      skippedLargeFiles += 1;
-      continue;
+function makeRipgrepError(message, code, cause) {
+  const error = new Error(message);
+  error.code = code;
+  if (cause !== undefined) error.cause = cause;
+  return error;
+}
+
+function classifyRipgrepFailure(stderr) {
+  if (/\bregex parse error\b|\bunclosed character class\b|\binvalid regex\b|\bregex syntax\b/i.test(stderr)) {
+    return "SEARCH_INVALID_REGEX";
+  }
+  return "SEARCH_RIPGREP_FAILED";
+}
+
+export function createRipgrepSearch({
+  executable = process.env.OPENCLAW_RIPGREP_PATH || "rg",
+  spawnProcess = spawn,
+} = {}) {
+  return async function grepSearch({ pattern, path: requestedPath, include } = {}) {
+    if (typeof pattern !== "string" || pattern.length === 0) {
+      throw new TypeError("pattern must be a non-empty ripgrep regular expression.");
     }
-    scannedFiles += 1;
-    let buffer;
+    if (pattern.includes("\0")) {
+      throw new TypeError("pattern must not contain NUL.");
+    }
+    if (include !== undefined && (typeof include !== "string" || include.trim().length === 0 || include.includes("\0"))) {
+      throw new TypeError("include must be a non-empty glob pattern when provided.");
+    }
+
+    const root = await resolveSearchPath(requestedPath, { allowFile: true });
+    if (root.isFile && (await stat(root.absolutePath)).size > MAX_GREP_FILE_BYTES) {
+      return {
+        pattern,
+        root: root.absolutePath,
+        ...(include === undefined ? {} : { include }),
+        matches: [],
+        count: 0,
+        truncated: false,
+      };
+    }
+    const searchCwd = root.isFile ? path.dirname(root.absolutePath) : root.absolutePath;
+    const searchTarget = root.isFile ? path.basename(root.absolutePath) : ".";
+    const args = [
+      "--no-config",
+      "--json",
+      "--line-buffered",
+      "--case-sensitive",
+      "--max-filesize",
+      String(MAX_GREP_FILE_BYTES),
+    ];
+
+    if (include !== undefined) args.push("--glob", include);
+    // Put hard exclusions last so a caller-supplied include glob cannot override them.
+    args.push("--glob", "!**/.git/**", "--glob", "!**/node_modules/**");
+    args.push("--regexp", pattern, "--", searchTarget);
+
+    let child;
     try {
-      buffer = await readFile(file.absolutePath);
-    } catch {
-      continue;
+      child = spawnProcess(executable, args, {
+        cwd: searchCwd,
+        windowsHide: true,
+        shell: false,
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+    } catch (cause) {
+      throw makeRipgrepError(
+        "Could not start ripgrep. Install ripgrep and ensure rg.exe is on PATH, or set OPENCLAW_RIPGREP_PATH.",
+        "SEARCH_RIPGREP_UNAVAILABLE",
+        cause,
+      );
     }
-    if (buffer.includes(0)) {
-      skippedBinaryFiles += 1;
-      continue;
-    }
-    const content = buffer.toString("utf8");
-    const lines = content.split(/\r?\n/);
-    for (let index = 0; index < lines.length; index += 1) {
-      const line = lines[index];
-      if (!matcher.test(line)) continue;
-      const isLineTruncated = line.length > MAX_GREP_LINE_CHARS;
+
+    const matches = [];
+    let truncated = false;
+    let stoppedForLimit = false;
+    let spawnError = null;
+    let parseError = null;
+    let stderr = "";
+    let summaryStats = null;
+
+    child.stderr.setEncoding("utf8");
+    child.stderr.on("data", (chunk) => {
+      if (stderr.length < 16_384) stderr += chunk.slice(0, 16_384 - stderr.length);
+    });
+
+    const lines = createInterface({ input: child.stdout, crlfDelay: Infinity });
+    lines.on("line", (jsonLine) => {
+      if (parseError || stoppedForLimit) return;
+      let message;
+      try {
+        message = JSON.parse(jsonLine);
+      } catch (cause) {
+        parseError = makeRipgrepError("ripgrep returned invalid JSON output.", "SEARCH_RIPGREP_FAILED", cause);
+        child.kill();
+        return;
+      }
+
+      if (message.type === "summary") {
+        summaryStats = message.data?.stats ?? null;
+        return;
+      }
+      if (message.type !== "match") return;
+
+      const data = message.data ?? {};
+      const rawPath = decodeJsonData(data.path);
+      const absolutePath = path.isAbsolute(rawPath) ? rawPath : path.resolve(searchCwd, rawPath);
+      const rawLine = decodeJsonData(data.lines);
+      const line = rawLine.replace(/\r?\n$/, "");
+      const lineTruncated = line.length > MAX_GREP_LINE_CHARS;
       matches.push({
-        path: file.absolutePath,
-        relativePath: file.relativePath,
-        lineNumber: index + 1,
-        line: isLineTruncated ? line.slice(0, MAX_GREP_LINE_CHARS) : line,
-        lineTruncated: isLineTruncated,
+        path: absolutePath,
+        relativePath: path.relative(root.isFile ? path.dirname(root.absolutePath) : root.absolutePath, absolutePath)
+          .split(path.sep).join("/"),
+        lineNumber: data.line_number,
+        line: lineTruncated ? line.slice(0, MAX_GREP_LINE_CHARS) : line,
+        lineTruncated,
       });
       if (matches.length > MAX_SEARCH_RESULTS) {
         truncated = true;
-        break;
+        stoppedForLimit = true;
+        child.kill();
       }
-    }
-    if (matches.length > MAX_SEARCH_RESULTS) break;
-  }
+    });
 
-  const limited = matches.slice(0, MAX_SEARCH_RESULTS);
-  return {
-    pattern,
-    root: root.absolutePath,
-    ...(include === undefined ? {} : { include }),
-    matches: limited,
-    count: limited.length,
-    truncated,
-    scannedEntries: collected.scannedEntries,
-    scannedFiles,
-    skippedBinaryFiles,
-    skippedLargeFiles,
+    child.once("error", (cause) => {
+      spawnError = cause;
+    });
+    const exit = await new Promise((resolve) => {
+      child.once("close", (code, signal) => resolve({ code, signal }));
+    });
+    lines.close();
+
+    if (spawnError) {
+      throw makeRipgrepError(
+        spawnError.code === "ENOENT"
+          ? "ripgrep executable was not found. Install ripgrep and ensure rg.exe is on PATH, or set OPENCLAW_RIPGREP_PATH."
+          : "Could not start ripgrep: " + spawnError.message,
+        spawnError.code === "ENOENT" ? "SEARCH_RIPGREP_UNAVAILABLE" : "SEARCH_RIPGREP_FAILED",
+        spawnError,
+      );
+    }
+    if (parseError) throw parseError;
+
+    // ripgrep exits 1 for a valid search with no matches.
+    if (exit.code !== 0 && exit.code !== 1 && !stoppedForLimit) {
+      const detail = stderr.trim();
+      throw makeRipgrepError(
+        detail || ("ripgrep exited with code " + String(exit.code) + (exit.signal ? " (signal " + exit.signal + ")" : "")),
+        classifyRipgrepFailure(detail),
+      );
+    }
+
+    return {
+      pattern,
+      root: root.absolutePath,
+      ...(include === undefined ? {} : { include }),
+      matches: matches.slice(0, MAX_SEARCH_RESULTS),
+      count: Math.min(matches.length, MAX_SEARCH_RESULTS),
+      truncated,
+      ...(Number.isInteger(summaryStats?.searches) && !stoppedForLimit
+        ? { scannedFiles: summaryStats.searches }
+        : {}),
+    };
   };
 }
+
+export const grepSearch = createRipgrepSearch();

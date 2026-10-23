@@ -24,7 +24,6 @@ function formatGlobResult(result) {
       count: result.count,
       totalMatchesFound: result.totalMatchesFound,
       truncated: result.truncated,
-      scannedEntries: result.scannedEntries,
     },
   };
 }
@@ -45,10 +44,7 @@ function formatGrepResult(result) {
       matches: result.matches,
       count: result.count,
       truncated: result.truncated,
-      scannedEntries: result.scannedEntries,
-      scannedFiles: result.scannedFiles,
-      skippedBinaryFiles: result.skippedBinaryFiles,
-      skippedLargeFiles: result.skippedLargeFiles,
+      ...(Number.isInteger(result.scannedFiles) ? { scannedFiles: result.scannedFiles } : {}),
     },
   };
 }
