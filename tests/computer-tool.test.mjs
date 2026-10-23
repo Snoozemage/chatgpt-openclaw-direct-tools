@@ -54,6 +54,20 @@ test("snapshot creates and forwards one executionId with only snapshot parameter
   assert.deepEqual(calls[0][4], { executionId: calls[0][2].executionId });
 });
 
+test("snapshot preserves vision image content and adds a short screenshot_ref for optional rendering", async () => {
+  const image = { type: "image", data: "aGVsbG8=", mimeType: "image/jpeg" };
+  const handle = createComputerToolHandler({ idleTimeoutMs: 0 });
+  const result = await handle("openclaw_computer", { action: "snapshot" }, {
+    node: "screenshot-ref-node",
+    invokeNodeCommand: async () => ({ content: [{ type: "text", text: "snapshot complete" }, image] }),
+  });
+
+  assert.equal(result.content[1], image);
+  assert.match(result.content[0].text, /Screenshot reference for optional UI rendering: scr_[a-f0-9]{24}/);
+  assert.equal(result.content[0].text.split("\n").length, 2);
+  assert.match(result.structuredContent.screenshot_ref, /^scr_[a-f0-9]{24}$/);
+});
+
 test("computer actions reuse the snapshot executionId and filter action-specific parameters", async () => {
   const calls = [];
   const handle = createComputerToolHandler({ idleTimeoutMs: 0 });

@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { computerNode } from "../../config/runtime.mjs";
 import { invokeNodeCommand } from "../../openclaw-client.mjs";
 import { computerToolDefinition, MAX_COMPUTER_BATCH_ACTIONS } from "./schema.mjs";
+import { storeScreenshot } from "./screenshot-store.mjs";
 
 const DEFAULT_IDLE_TIMEOUT_MS = 5 * 60 * 1000;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -267,7 +268,31 @@ export function createComputerToolHandler({ idleTimeoutMs = DEFAULT_IDLE_TIMEOUT
 
     const error = validateAction(args.action);
     if (error) return toolError(error);
-    return enqueue(queues, key, () => performAction(name, args, context));
+    return enqueue(queues, key, async () => {
+      const result = await performAction(name, args, context);
+      if (args.action !== "snapshot" || result?.isError) return result;
+
+      const image = (result?.content ?? []).find((item) =>
+        item?.type === "image" && typeof item.data === "string" && typeof item.mimeType === "string"
+      );
+      if (!image) return result;
+
+      const screenshotRef = storeScreenshot(image.data, image.mimeType);
+      const content = [...result.content];
+      const refText = "Screenshot reference for optional UI rendering: " + screenshotRef + ". Call openclaw_image_render only when the screenshot should be displayed in the chat UI.";
+      const textIndex = content.findIndex((item) => item?.type === "text" && typeof item.text === "string");
+      if (textIndex >= 0) content[textIndex] = { ...content[textIndex], text: content[textIndex].text + "\n" + refText };
+      else content.unshift({ type: "text", text: refText });
+
+      return {
+        ...result,
+        content,
+        structuredContent: {
+          ...(result.structuredContent && typeof result.structuredContent === "object" ? result.structuredContent : {}),
+          screenshot_ref: screenshotRef,
+        },
+      };
+    });
   };
 }
 
