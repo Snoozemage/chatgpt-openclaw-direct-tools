@@ -21,10 +21,17 @@ test("file tools expose five independent schemas with native parameter contracts
   }
 
   const read = fileToolDefinitions.find((tool) => tool.name === "openclaw_read");
-  assert.deepEqual(read.inputSchema.required, ["path"]);
+  assert.deepEqual(read.inputSchema.oneOf.map((branch) => branch.required), [["path"], ["requests"]]);
   assert.equal(read.inputSchema.properties.offset.minimum, 1);
   assert.equal(read.inputSchema.properties.cursor.minimum, 0);
   assert.equal(read.inputSchema.properties.optional.const, true);
+
+  for (const name of ["openclaw_ls", "openclaw_read"]) {
+    const requests = fileToolDefinitions.find((tool) => tool.name === name).inputSchema.properties.requests;
+    assert.equal(requests.minItems, 1);
+    assert.equal(requests.maxItems, 5);
+    assert.deepEqual(requests.items.required, ["path"]);
+  }
 
   const edit = fileToolDefinitions.find((tool) => tool.name === "openclaw_edit");
   assert.deepEqual(edit.inputSchema.required, ["path", "edits"]);
@@ -83,6 +90,103 @@ test("read forwards native image content without dropping image blocks", async (
   });
   const result = await handler("openclaw_read", { path: "image.png" });
   assert.deepEqual(result.content, [{ type: "text", text: "image read" }, image]);
+});
+
+test("read batch forwards independent per-file line ranges and labels each result", async () => {
+  const calls = [];
+  const handler = createFileToolHandler({
+    resolveTool: async (nativeName) => ({
+      prepareArguments: (args) => ({ ...args }),
+      execute: async (_callId, args) => {
+        calls.push({ nativeName, args });
+        return {
+          content: [{ type: "text", text: "read " + args.path + " at " + args.offset + " limit " + args.limit }],
+          details: { path: args.path, offset: args.offset, limit: args.limit, content: "duplicate" },
+        };
+      },
+    }),
+  });
+
+  const result = await handler("openclaw_read", {
+    requests: [
+      { path: "src/a.mjs", offset: 10, limit: 5 },
+      { path: "src/b.mjs", offset: 40, limit: 8 },
+    ],
+  });
+
+  assert.equal(result.isError, undefined);
+  assert.equal(result.diagnostics.stage, "native_file_tool_batch");
+  assert.equal(result.diagnostics.requestCount, 2);
+  assert.equal(result.diagnostics.failedCount, 0);
+  assert.deepEqual(result.structuredContent.results.map(({ path, isError, details }) => ({ path, isError, details })), [
+    { path: "src/a.mjs", isError: false, details: { path: "src/a.mjs", offset: 10, limit: 5 } },
+    { path: "src/b.mjs", isError: false, details: { path: "src/b.mjs", offset: 40, limit: 8 } },
+  ]);
+  assert.deepEqual(result.content.filter((item) => item.type === "text").map((item) => item.text), [
+    "=== src/a.mjs ===",
+    "read src/a.mjs at 10 limit 5",
+    "=== src/b.mjs ===",
+    "read src/b.mjs at 40 limit 8",
+  ]);
+  assert.deepEqual(calls.map(({ nativeName, args }) => ({ nativeName, path: args.path, offset: args.offset, limit: args.limit })).sort((a, b) => a.path.localeCompare(b.path)), [
+    { nativeName: "read", path: "src/a.mjs", offset: 10, limit: 5 },
+    { nativeName: "read", path: "src/b.mjs", offset: 40, limit: 8 },
+  ]);
+});
+
+test("ls batch returns per-directory results and preserves partial failures", async () => {
+  const calls = [];
+  const handler = createFileToolHandler({
+    resolveTool: async (nativeName) => ({
+      execute: async (_callId, args) => {
+        calls.push({ nativeName, args });
+        if (args.path === "missing/") {
+          return { isError: true, content: [{ type: "text", text: "directory not found" }] };
+        }
+        return { content: [{ type: "text", text: "listed " + args.path }], details: { nextAfter: args.after ?? null } };
+      },
+    }),
+  });
+
+  const result = await handler("openclaw_ls", {
+    requests: [
+      { path: "src/", limit: 20 },
+      { path: "missing/", after: "last-entry" },
+    ],
+  });
+
+  assert.equal(result.isError, true);
+  assert.equal(result.diagnostics.requestCount, 2);
+  assert.equal(result.diagnostics.failedCount, 1);
+  assert.deepEqual(result.structuredContent.results.map(({ path, isError }) => ({ path, isError })), [
+    { path: "src/", isError: false },
+    { path: "missing/", isError: true },
+  ]);
+  assert.deepEqual(calls.map(({ nativeName, args }) => ({ nativeName, args })), [
+    { nativeName: "ls", args: { path: "src/", limit: 20 } },
+    { nativeName: "ls", args: { path: "missing/", after: "last-entry" } },
+  ]);
+  assert.ok(result.content.some((item) => item.text === "=== missing/ (ERROR) ==="));
+  assert.ok(result.content.some((item) => item.text === "directory not found"));
+});
+
+test("batch rejects more than five items and mixed single/batch arguments before execution", async () => {
+  const handler = createFileToolHandler({
+    resolveTool: async () => assert.fail("invalid batch must not execute"),
+  });
+
+  const tooMany = await handler("openclaw_read", {
+    requests: Array.from({ length: 6 }, (_, index) => ({ path: "file-" + index + ".txt" })),
+  });
+  assert.equal(tooMany.isError, true);
+  assert.match(tooMany.content[0].text, /between 1 and 5/);
+
+  const conflicting = await handler("openclaw_ls", {
+    path: "src/",
+    requests: [{ path: "tests/" }],
+  });
+  assert.equal(conflicting.isError, true);
+  assert.match(conflicting.content[0].text, /do not combine requests/);
 });
 
 test("native executor errors are returned as MCP errors with diagnostics", async () => {

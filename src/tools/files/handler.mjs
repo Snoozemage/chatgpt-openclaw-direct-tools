@@ -110,10 +110,7 @@ function errorResponse(nativeTool, error, startedAt) {
 }
 
 export function createFileToolHandler({ resolveTool = getNativeFileTool } = {}) {
-  return async function handleFileTool(name, args = {}) {
-    if (!fileToolNames.has(name)) return undefined;
-
-    const nativeToolName = nativeToolNames.get(name);
+  async function executeOne(nativeToolName, args = {}) {
     const startedAt = Date.now();
     try {
       const tool = await resolveTool(nativeToolName);
@@ -146,6 +143,70 @@ export function createFileToolHandler({ resolveTool = getNativeFileTool } = {}) 
     } catch (error) {
       return errorResponse(nativeToolName, error, startedAt);
     }
+  }
+
+  function batchInputError(nativeToolName, message) {
+    return {
+      isError: true,
+      diagnostics: { stage: "argument_validation", nativeTool: nativeToolName },
+      content: [{ type: "text", text: message }],
+    };
+  }
+
+  return async function handleFileTool(name, args = {}) {
+    if (!fileToolNames.has(name)) return undefined;
+
+    const nativeToolName = nativeToolNames.get(name);
+    const supportsBatch = name === "openclaw_ls" || name === "openclaw_read";
+    if (supportsBatch && Object.prototype.hasOwnProperty.call(args, "requests")) {
+      if (Object.keys(args).some((key) => key !== "requests")) {
+        return batchInputError(nativeToolName, "For batch calls, put all per-item options inside requests and do not combine requests with single-operation arguments.");
+      }
+      if (!Array.isArray(args.requests) || args.requests.length < 1 || args.requests.length > 5) {
+        return batchInputError(nativeToolName, "requests must contain between 1 and 5 items.");
+      }
+      for (let index = 0; index < args.requests.length; index += 1) {
+        const request = args.requests[index];
+        if (!request || typeof request !== "object" || Array.isArray(request)
+          || typeof request.path !== "string" || request.path.trim().length === 0) {
+          return batchInputError(nativeToolName, "Each requests item must be an object with a non-empty path; invalid item at index " + index + ".");
+        }
+      }
+
+      const results = await Promise.all(args.requests.map(async (request) => ({
+        path: request.path,
+        ...(await executeOne(nativeToolName, request)),
+      })));
+      const content = [];
+      for (const item of results) {
+        content.push({
+          type: "text",
+          text: "=== " + item.path + (item.isError ? " (ERROR)" : "") + " ===",
+        });
+        content.push(...item.content);
+      }
+      const failedCount = results.filter((item) => item.isError === true).length;
+      return {
+        ...(failedCount > 0 ? { isError: true } : {}),
+        content,
+        structuredContent: {
+          results: results.map((item) => ({
+            path: item.path,
+            isError: item.isError === true,
+            ...(item.structuredContent ? { details: item.structuredContent } : {}),
+            ...(item.diagnostics ? { diagnostics: item.diagnostics } : {}),
+          })),
+        },
+        diagnostics: {
+          stage: "native_file_tool_batch",
+          nativeTool: nativeToolName,
+          requestCount: results.length,
+          failedCount,
+        },
+      };
+    }
+
+    return executeOne(nativeToolName, args);
   };
 }
 

@@ -6,31 +6,63 @@ const boolean = (description, extra = {}) => ({ type: "boolean", description, ..
 export const fileToolDefinitions = [
   {
     name: "openclaw_ls",
-    description: "List files and directories using OpenClaw's native ls tool. Dotfiles and links are included. Use the returned after cursor with the same path to fetch the next page; use this tool before reading when the exact file path is unknown.",
+    description: "List files and directories using OpenClaw's native ls tool. Dotfiles and links are included. Use path for one directory or requests for a batch of 1–5 directories; each batch item must include its own path and may set limit and after independently. Use the returned after cursor with the same path to fetch the next page. Prefer batch when inspecting several known directories.",
     annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
     inputSchema: {
       type: "object",
       properties: {
-        path: string("Directory path. Omit to use OpenClaw's current working directory."),
+        path: string("Directory path for a single listing. Omit to use OpenClaw's current working directory."),
         limit: number("Maximum number of directory entries to return; native default is 500."),
         after: string("Filename cursor returned by the previous page. Reuse it with the same path to continue listing."),
+        requests: {
+          type: "array",
+          description: "Batch of 1–5 independent directory listings. Put path, limit and after inside each item.",
+          minItems: 1,
+          maxItems: 5,
+          items: {
+            type: "object",
+            properties: {
+              path: { ...string("Required directory path for this listing."), minLength: 1 },
+              limit: number("Maximum number of directory entries for this listing; native default is 500."),
+              after: string("Filename cursor for this directory listing."),
+            },
+            required: ["path"],
+          },
+        },
       },
     },
   },
   {
     name: "openclaw_read",
-    description: "Read a text file or a supported image file through OpenClaw. Supported image formats include JPG, PNG, GIF, WebP and BMP; image content is attached to the model context. Text output is capped by the native tool (up to 2000 lines or 50 KB per read). Use offset and limit for line-based paging, or cursor to continue within a long line.",
+    description: "Read a text file or a supported image file through OpenClaw. Supported image formats include JPG, PNG, GIF, WebP and BMP; image content is attached to the model context. Use path for one file or requests for a batch of 1–5 files. Each batch item has its own path, offset, limit, cursor and optional settings. Text output is capped by the native tool (up to 2000 lines or 50 KB per file read); use offset and limit to read only the needed lines, or cursor to continue within a long line. Prefer batch when inspecting several known files.",
     annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
     inputSchema: {
       type: "object",
       properties: {
-        path: string("Required file path, relative or absolute."),
+        path: string("Required file path for a single read, relative or absolute."),
         offset: integer("One-based starting line for text reads.", { minimum: 1 }),
         limit: number("Maximum number of lines to return."),
         cursor: integer("Zero-based character position within the starting line, used to continue a long line.", { minimum: 0 }),
         optional: boolean("When true, a missing path returns a structured not_found result instead of failing.", { const: true }),
+        requests: {
+          type: "array",
+          description: "Batch of 1–5 independent file reads. Put path and any per-file paging options inside each item.",
+          minItems: 1,
+          maxItems: 5,
+          items: {
+            type: "object",
+            properties: {
+              path: { ...string("Required file path for this read, relative or absolute."), minLength: 1 },
+              offset: integer("One-based starting line for this file.", { minimum: 1 }),
+              limit: number("Maximum number of lines to return for this file."),
+              cursor: integer("Zero-based character position within the starting line for this file.", { minimum: 0 }),
+              optional: boolean("When true, a missing path returns a structured not_found result instead of failing.", { const: true }),
+            },
+            required: ["path"],
+          },
+        },
       },
-      required: ["path"],
+      oneOf: [{ required: ["path"] }, { required: ["requests"] }],
     },
   },
   {
