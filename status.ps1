@@ -5,7 +5,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$AppHome = Join-Path $env:LOCALAPPDATA 'OpenClawDirectCDPBridge'
+$AppHome = Join-Path $env:LOCALAPPDATA 'OpenClawChatGPTBridge'
 $ConfigFile = Join-Path $AppHome 'config.json'
 $exitCode = 0
 

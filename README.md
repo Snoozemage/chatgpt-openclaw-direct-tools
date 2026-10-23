@@ -77,7 +77,7 @@ The bridge does not silently rewrite caller-supplied arguments or claim that an 
 Open the local monitor at:
 
 ```text
-http://127.0.0.1:19003/monitor
+http://127.0.0.1:19002/monitor
 ```
 
 The port can differ if changed during setup.
@@ -162,7 +162,7 @@ Follow the prompts to configure the OpenClaw paths, bridge and Gateway ports, tu
 The default local application directory is:
 
 ```text
-%LOCALAPPDATA%\OpenClawDirectCDPBridge\
+%LOCALAPPDATA%\OpenClawChatGPTBridge\
 ```
 
 It contains the generated configuration, restricted API-key file, tunnel profile, and runtime logs. These files should remain local and must not be committed.
@@ -209,7 +209,7 @@ npm run test:unit
 Run the live smoke suite against a running local bridge:
 
 ```powershell
-npm test -- -BaseUrl http://127.0.0.1:19003
+npm test -- -BaseUrl http://127.0.0.1:19002
 ```
 
 The static check validates JavaScript and PowerShell syntax and checks selected architecture and lifecycle contracts. Unit tests cover the Browser MCP schema and browser relay input-access regressions. The smoke suite exercises live bridge/Gateway behavior; it requires a working local runtime and may depend on the installed OpenClaw configuration.

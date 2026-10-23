@@ -1,5 +1,5 @@
 [CmdletBinding()]
-param([string]$BaseUrl = 'http://127.0.0.1:19003')
+param([string]$BaseUrl = 'http://127.0.0.1:19002')
 
 $ErrorActionPreference = 'Stop'
 $base = $BaseUrl.TrimEnd('/')

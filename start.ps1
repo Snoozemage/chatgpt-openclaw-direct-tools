@@ -3,7 +3,7 @@ param([switch]$NoBrowser)
 
 $ErrorActionPreference = 'Stop'
 $RepoRoot = $PSScriptRoot
-$AppHome = Join-Path $env:LOCALAPPDATA 'OpenClawDirectCDPBridge'
+$AppHome = Join-Path $env:LOCALAPPDATA 'OpenClawChatGPTBridge'
 $ConfigFile = Join-Path $AppHome 'config.json'
 $GatewayPidFile = Join-Path $AppHome 'gateway.pid'
 $BridgePidFile = Join-Path $AppHome 'bridge.pid'
