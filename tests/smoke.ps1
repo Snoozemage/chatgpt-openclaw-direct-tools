@@ -29,17 +29,34 @@ try {
 try {
     $initialized = Send-Mcp -Id 1 -Method 'initialize' -Params @{ protocolVersion = '2025-03-26'; capabilities = @{} }
     Assert-Check ($initialized.result.serverInfo.name -eq 'openclaw-chatgpt-bridge') 'MCP initialize and server identity'
-    $computerInstructionsValid = $initialized.result.instructions.Contains('executionId') -and $initialized.result.instructions.Contains('close_execution') -and $initialized.result.instructions.Contains('five-step limit')
-    Assert-Check $computerInstructionsValid 'MCP instructions explain computer execution lifecycle'
+    $instructions = [string]$initialized.result.instructions
+    $requiredInstructionSections = @(
+        '## 1. Scope and precedence',
+        '## 2. Autonomous execution',
+        '## 3. Tool use',
+        '## 4. Context and output discipline',
+        '## 5. File operations and code changes',
+        '## 6. Architecture and implementation quality',
+        '## 7. Validation and completion',
+        '## 8. Safety and decision boundaries',
+        '## 9. Communication'
+    )
+    $missingInstructionSections = @($requiredInstructionSections | Where-Object { -not $instructions.Contains($_) })
+    $instructionsStructured = $missingInstructionSections.Count -eq 0 -and $instructions.Contains('- Follow the most specific applicable') -and $instructions.Contains('- Validate actual model-facing MCP schemas')
+    Assert-Check $instructionsStructured 'MCP initialization provides structured agent instructions' ('Missing sections: ' + ($missingInstructionSections -join ', '))
 } catch { Assert-Check $false 'MCP initialize' $_.Exception.Message }
 
 try {
     $listed = Send-Mcp -Id 2 -Method 'tools/list'
     $toolNames = @($listed.result.tools | ForEach-Object { $_.name })
-    $expectedPublicToolNames = @('openclaw_browser', 'openclaw_computer', 'openclaw_image_render')
+    $expectedPublicToolNames = @('openclaw_browser', 'openclaw_computer', 'openclaw_image_render', 'openclaw_ls', 'openclaw_read', 'openclaw_edit', 'openclaw_write', 'openclaw_apply_patch')
     $missingPublicToolNames = @($expectedPublicToolNames | Where-Object { $_ -notin $toolNames })
     $publicToolNamesValid = $toolNames.Count -eq $expectedPublicToolNames.Count -and $missingPublicToolNames.Count -eq 0
     Assert-Check $publicToolNamesValid 'Browser, Computer, and Image Render tools are publicly exposed' ('Missing: ' + ($missingPublicToolNames -join ', '))
+
+    $computerDefinition = $listed.result.tools | Where-Object { $_.name -eq 'openclaw_computer' } | Select-Object -First 1
+    $computerLifecycleValid = $null -ne $computerDefinition -and $computerDefinition.description.Contains('executionId') -and $computerDefinition.description.Contains('close_execution') -and $computerDefinition.description.Contains('Batch up to 5 predictable actions')
+    Assert-Check $computerLifecycleValid 'Computer tool description documents the execution lifecycle'
 
     $renderDefinition = $listed.result.tools | Where-Object { $_.name -eq 'openclaw_image_render' } | Select-Object -First 1
     $renderSchemaValid = $null -ne $renderDefinition -and @($renderDefinition.inputSchema.required) -contains 'screenshot_ref' -and $renderDefinition._meta.ui.resourceUri -eq 'ui://openclaw/image-render/v4.html'
