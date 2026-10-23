@@ -134,7 +134,7 @@ chatgpt-openclaw-direct-tools/
 │   ├── check-syntax.ps1
 │   └── smoke.ps1
 ├── docs/
-│   └── TOOL_EXPOSURE_PLAN.md
+│   └── TOOL_EXPOSURE_GUIDE.md
 ├── setup.ps1
 ├── start.ps1
 ├── start-on-logon.ps1
