@@ -29,7 +29,7 @@ try {
 try {
     $initialized = Send-Mcp -Id 1 -Method 'initialize' -Params @{ protocolVersion = '2025-03-26'; capabilities = @{} }
     Assert-Check ($initialized.result.serverInfo.name -eq 'openclaw-chatgpt-bridge') 'MCP initialize and server identity'
-    $computerInstructionsValid = $initialized.result.instructions.Contains('executionId') -and $initialized.result.instructions.Contains('close_execution')
+    $computerInstructionsValid = $initialized.result.instructions.Contains('executionId') -and $initialized.result.instructions.Contains('close_execution') -and $initialized.result.instructions.Contains('five-step limit')
     Assert-Check $computerInstructionsValid 'MCP instructions explain computer execution lifecycle'
 } catch { Assert-Check $false 'MCP initialize' $_.Exception.Message }
 
@@ -62,14 +62,15 @@ try {
 
     $computerDefinition = $listed.result.tools | Where-Object { $_.name -eq 'openclaw_computer' } | Select-Object -First 1
     $computerSchema = $computerDefinition.inputSchema
-    $expectedComputerActions = @('snapshot', 'close_execution', 'left_click', 'right_click', 'middle_click', 'double_click', 'triple_click', 'mouse_move', 'left_click_drag', 'left_mouse_down', 'left_mouse_up', 'scroll', 'type', 'key', 'hold_key', 'list_apps', 'list_windows', 'get_accessibility_tree', 'get_cursor_position', 'get_window_state', 'launch_app', 'kill_app', 'bring_to_front', 'set_value', 'invoke_menu', 'zoom')
+    $expectedComputerActions = @('snapshot', 'close_execution', 'batch', 'left_click', 'right_click', 'middle_click', 'double_click', 'triple_click', 'mouse_move', 'left_click_drag', 'left_mouse_down', 'left_mouse_up', 'scroll', 'type', 'key', 'hold_key', 'list_apps', 'list_windows', 'get_accessibility_tree', 'get_cursor_position', 'get_window_state', 'launch_app', 'kill_app', 'bring_to_front', 'set_value', 'invoke_menu', 'zoom')
     $missingComputerActions = @($expectedComputerActions | Where-Object { $_ -notin @($computerSchema.properties.action.enum) })
     $computerSchemaValid = $null -ne $computerDefinition -and @($computerSchema.required) -contains 'action' -and $computerSchema.additionalProperties -eq $true
     $computerSchemaValid = $computerSchemaValid -and $missingComputerActions.Count -eq 0 -and @($computerSchema.properties.action.enum).Count -eq $expectedComputerActions.Count
     $computerSchemaValid = $computerSchemaValid -and $computerSchema.properties.executionId.pattern.StartsWith('^[0-9a-fA-F]{8}-')
     Assert-Check $computerSchemaValid 'Computer schema exposes desktop actions and execution lifecycle' ('Missing: ' + ($missingComputerActions -join ', '))
-    $computerGuidanceValid = $computerDefinition.description.Contains('executionId') -and $computerDefinition.description.Contains('displayFrameId') -and $computerDefinition.description.Contains('close_execution')
-    Assert-Check $computerGuidanceValid 'Computer guidance explains execution and frame lifecycle'
+    $computerGuidanceValid = $computerDefinition.description.Contains('executionId') -and $computerDefinition.description.Contains('displayFrameId') -and $computerDefinition.description.Contains('close_execution') -and $computerDefinition.description.Contains('up to 5')
+    $computerBatchSchemaValid = $computerSchema.properties.actions.maxItems -eq 5 -and @($computerSchema.properties.actions.items.properties.action.enum).Count -gt 0 -and $computerSchema.properties.stopOnError.type -eq 'boolean'
+    Assert-Check ($computerGuidanceValid -and $computerBatchSchemaValid) 'Computer guidance documents execution lifecycle and sequential batch contract'
 } catch { Assert-Check $false 'MCP tool schema' $_.Exception.Message }
 
 try {

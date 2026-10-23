@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { computerToolDefinition, COMPUTER_ACTIONS } from "../src/tools/computer/schema.mjs";
+import { computerToolDefinition, COMPUTER_ACTIONS, MAX_COMPUTER_BATCH_ACTIONS } from "../src/tools/computer/schema.mjs";
 import { createComputerToolHandler } from "../src/tools/computer/handler.mjs";
 
 const fakeInvoker = (calls, result = { content: [] }) => async (...args) => {
@@ -166,6 +166,154 @@ test("invalid execution IDs and unknown actions fail before invoking the node", 
   assert.equal(unknown.isError, true);
   assert.match(unknown.content[0].text, /Unsupported desktop action/);
   assert.equal(calls.length, 0);
+});
+
+test("computer batch schema documents sequential actions and limits", () => {
+  const schema = computerToolDefinition.inputSchema;
+  assert.ok(schema.properties.action.enum.includes("batch"));
+  assert.equal(schema.properties.actions.minItems, 1);
+  assert.equal(schema.properties.actions.maxItems, MAX_COMPUTER_BATCH_ACTIONS);
+  assert.equal(MAX_COMPUTER_BATCH_ACTIONS, 5);
+  assert.match(schema.properties.actions.description, /1–5 steps/);
+  assert.match(schema.properties.actions.description, /observing the UI/);
+  assert.ok(schema.properties.actions.items.properties.action.enum.includes("snapshot"));
+  assert.ok(!schema.properties.actions.items.properties.action.enum.includes("batch"));
+  assert.ok(!schema.properties.actions.items.properties.action.enum.includes("close_execution"));
+  assert.match(schema.properties.stopOnError.description, /Defaults to true/);
+});
+
+test("batch sends actions sequentially in one handler call and reuses one execution", async () => {
+  const calls = [];
+  const handle = createComputerToolHandler({ idleTimeoutMs: 0 });
+  const invoke = async (...args) => {
+    calls.push(args);
+    return { content: [{ type: "text", text: "ok-" + args[2].action }] };
+  };
+
+  await handle("openclaw_computer", {
+    action: "snapshot",
+    maxWidth: 960,
+    format: "jpeg",
+  }, { node: "batch-node", invokeNodeCommand: invoke });
+  const result = await handle("openclaw_computer", {
+    action: "batch",
+    actions: [
+      { action: "left_click", x: 200, y: 100, displayFrameId: "frame-1" },
+      { action: "type", text: "die with a smile" },
+      { action: "key", keys: "ENTER" },
+      { action: "key", keys: "TAB" },
+      { action: "key", keys: "ENTER" },
+    ],
+  }, { node: "batch-node", invokeNodeCommand: invoke });
+
+  assert.equal(calls.length, 6);
+  assert.deepEqual(calls.map((call) => call[1]), [
+    "screen.snapshot",
+    "computer.act", "computer.act", "computer.act", "computer.act", "computer.act",
+  ]);
+  const executionId = calls[0][2].executionId;
+  assert.match(executionId, UUID_V4);
+  assert.ok(calls.every((call) => call[2].executionId === executionId));
+  assert.deepEqual(calls[1][2], {
+    action: "left_click",
+    displayFrameId: "frame-1",
+    x: 200,
+    y: 100,
+    executionId,
+  });
+  assert.equal(calls[2][2].text, "die with a smile");
+  assert.equal(calls[3][2].keys, "ENTER");
+  assert.equal(calls[4][2].keys, "TAB");
+  assert.equal(calls[5][2].keys, "ENTER");
+  assert.match(result.content[0].text, /5\/5 actions executed; 5 succeeded, 0 failed/);
+  assert.equal(result.structuredContent.results.length, 5);
+  assert.equal(result.isError, undefined);
+});
+
+test("batch stops at the first error by default and returns partial results", async () => {
+  const calls = [];
+  const handle = createComputerToolHandler({ idleTimeoutMs: 0 });
+  const invoke = async (...args) => {
+    calls.push(args);
+    if (args[2].action === "type") return { isError: true, content: [{ type: "text", text: "native failure" }] };
+    return { content: [{ type: "text", text: "ok" }] };
+  };
+
+  const result = await handle("openclaw_computer", {
+    action: "batch",
+    actions: [
+      { action: "left_click", x: 1, y: 2 },
+      { action: "type", text: "fail" },
+      { action: "key", keys: "ENTER" },
+    ],
+  }, { node: "batch-failure-node", invokeNodeCommand: invoke });
+
+  assert.equal(calls.length, 2);
+  assert.equal(result.isError, true);
+  assert.equal(result.structuredContent.results.length, 2);
+  assert.equal(result.structuredContent.results[1].isError, true);
+  assert.match(result.content[0].text, /2\/3 actions executed; 1 succeeded, 1 failed/);
+});
+
+test("batch validates the full action list before performing any side effects", async () => {
+  const calls = [];
+  const handle = createComputerToolHandler({ idleTimeoutMs: 0 });
+  const deps = { node: "batch-validation-node", invokeNodeCommand: fakeInvoker(calls) };
+
+  const closeResult = await handle("openclaw_computer", {
+    action: "batch",
+    actions: [
+      { action: "left_click", x: 1, y: 2 },
+      { action: "close_execution" },
+    ],
+  }, deps);
+  assert.equal(closeResult.isError, true);
+  assert.match(closeResult.content[0].text, /close_execution cannot run inside a batch/);
+  assert.equal(calls.length, 0);
+
+  const midBatchSnapshot = await handle("openclaw_computer", {
+    action: "batch",
+    actions: [
+      { action: "snapshot" },
+      { action: "left_click", x: 1, y: 2 },
+    ],
+  }, deps);
+  assert.equal(midBatchSnapshot.isError, true);
+  assert.match(midBatchSnapshot.content[0].text, /snapshot can only be the final batch action/);
+  assert.equal(calls.length, 0);
+
+  const oversized = await handle("openclaw_computer", {
+    action: "batch",
+    actions: Array.from({ length: 6 }, () => ({ action: "key", keys: "ENTER" })),
+  }, deps);
+  assert.equal(oversized.isError, true);
+  assert.match(oversized.content[0].text, /between 1 and 5/);
+  assert.equal(calls.length, 0);
+});
+
+test("batch can continue after failures when stopOnError is false", async () => {
+  const calls = [];
+  const handle = createComputerToolHandler({ idleTimeoutMs: 0 });
+  const invoke = async (...args) => {
+    calls.push(args);
+    return args[2].action === "type"
+      ? { isError: true, content: [{ type: "text", text: "failed" }] }
+      : { content: [{ type: "text", text: "ok" }] };
+  };
+
+  const result = await handle("openclaw_computer", {
+    action: "batch",
+    stopOnError: false,
+    actions: [
+      { action: "type", text: "first" },
+      { action: "key", keys: "ENTER" },
+    ],
+  }, { node: "batch-continue-node", invokeNodeCommand: invoke });
+
+  assert.equal(calls.length, 2);
+  assert.equal(result.isError, true);
+  assert.equal(result.structuredContent.results.length, 2);
+  assert.equal(result.structuredContent.results[1].isError, false);
 });
 
 test("other tool names are ignored by the computer handler", async () => {
