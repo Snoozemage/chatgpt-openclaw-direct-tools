@@ -131,7 +131,7 @@ if ($ValidateOnly) {
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
     $package = Get-Content -LiteralPath (Join-Path $RepoRoot 'package.json') -Raw | ConvertFrom-Json
-    if ($package.engines.node -notmatch '20') { throw 'package.json does not declare Node.js 20+.' }
+    if ($package.engines.node -notmatch '22\.17') { throw 'package.json does not declare Node.js 22.17+.' }
     Write-Host 'PASS package metadata' -ForegroundColor Green
     exit 0
 }
@@ -165,11 +165,28 @@ $nodeCandidates = @(
     (Get-Command node.exe -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source -First 1)
 )
 $NodePath = if ($NodePath) { $NodePath } else { Find-FirstFile $nodeCandidates }
-if (-not $NodePath) { $NodePath = Read-Host 'Full path to node.exe (Node.js 20 or newer)' }
+if (-not $NodePath) { $NodePath = Read-Host 'Full path to node.exe (Node.js 22.17 or newer)' }
 if (-not (Test-Path -LiteralPath $NodePath -PathType Leaf)) { throw "Node.js executable not found: $NodePath" }
 $NodePath = (Resolve-Path -LiteralPath $NodePath).Path
 $nodeVersion = (& $NodePath --version 2>&1 | Out-String).Trim()
-if ($nodeVersion -notmatch '^v(\d+)\.' -or [int]$Matches[1] -lt 20) { throw "Node.js 20+ is required; found $nodeVersion." }
+if ($nodeVersion -match '^v(\d+)\.(\d+)\.') {
+    $nodeMajor = [int]$Matches[1]
+    $nodeMinor = [int]$Matches[2]
+} else {
+    throw "Could not determine the Node.js version: $nodeVersion."
+}
+if ($nodeMajor -lt 22 -or ($nodeMajor -eq 22 -and $nodeMinor -lt 17)) { throw "Node.js 22.17+ is required; found $nodeVersion." }
+
+$ripgrepCommand = if ($env:OPENCLAW_RIPGREP_PATH) {
+    if (Test-Path -LiteralPath $env:OPENCLAW_RIPGREP_PATH -PathType Leaf) { Get-Item -LiteralPath $env:OPENCLAW_RIPGREP_PATH } else { $null }
+} else {
+    Get-Command rg.exe -ErrorAction SilentlyContinue
+}
+if (-not $ripgrepCommand) { throw 'ripgrep (rg.exe) is required. Install it and add it to PATH, or set OPENCLAW_RIPGREP_PATH to its full path.' }
+$ripgrepPath = if ($ripgrepCommand.Source) { $ripgrepCommand.Source } else { $ripgrepCommand.FullName }
+$ripgrepVersion = (& $ripgrepPath --version 2>&1 | Select-Object -First 1 | Out-String).Trim()
+if ($LASTEXITCODE -ne 0 -or $ripgrepVersion -notmatch '^ripgrep ') { throw "Could not run ripgrep at $ripgrepPath." }
+Write-Host "Using $ripgrepVersion at $ripgrepPath" -ForegroundColor Green
 
 $globalNpmRoot = $null
 $npmCommand = Get-Command npm.cmd -ErrorAction SilentlyContinue

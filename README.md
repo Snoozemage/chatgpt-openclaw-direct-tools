@@ -1,6 +1,6 @@
 # ChatGPT OpenClaw Direct Tools Bridge
 
-[![Node.js 20+](https://img.shields.io/badge/Node.js-20%2B-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
+[![Node.js 22.17+](https://img.shields.io/badge/Node.js-22.17%2B-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
 [![Platform: Windows](https://img.shields.io/badge/platform-Windows-0078D4?logo=windows&logoColor=white)](https://www.microsoft.com/windows)
 [![Protocol: MCP](https://img.shields.io/badge/protocol-MCP-5B5BD6)](https://modelcontextprotocol.io/)
 
@@ -23,7 +23,7 @@ The bridge exposes twelve public MCP tools. Browser, Computer, and Files wrap th
 - **Native Browser access** — forward Browser actions to OpenClaw Gateway's `/tools/invoke` endpoint.
 - **Desktop computer control** — invoke `computer.act` and `screen.snapshot` on the paired OpenClaw Windows computer node.
 - **Schema-led tool discovery** — expose supported browser, desktop, and file-operation contracts to the MCP client.
-- **Local project search** — `openclaw_glob` finds paths by glob pattern; `openclaw_grep` searches matching file lines with regular expressions and reports line numbers.
+- **Local project search** — `openclaw_glob` uses Node.js's built-in `fs/promises.glob()`; `openclaw_grep` invokes ripgrep (`rg`) directly with structured JSON output and reports matching lines and line numbers. Ripgrep respects standard ignore files such as `.gitignore`.
 - **Live call monitor** — inspect running, successful, and failed calls, including arguments, output, duration, and available diagnostics.
 - **Windows lifecycle management** — configure, start, inspect, and stop bridge-related processes with PowerShell scripts.
 - **Runtime diagnostics** — retain native tool errors and attach relevant Gateway log context when invocation fails.
@@ -154,7 +154,8 @@ Public schemas are registered in `src/mcp/tool-definitions.mjs`; their handlers 
 ### Requirements
 
 - Windows and PowerShell.
-- Node.js **20 or later**.
+- Node.js **22.17 or later** (`fs/promises.glob()` is stable in this release line).
+- ripgrep (`rg.exe`) available on `PATH`. You can set `OPENCLAW_RIPGREP_PATH` to an executable path when it is not on `PATH`.
 - An installed and configured OpenClaw runtime and Gateway.
 - An OpenAI Secure MCP Tunnel configuration for the ChatGPT custom MCP connector.
 
