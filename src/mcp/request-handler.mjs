@@ -1,5 +1,7 @@
+import { readFile } from "node:fs/promises";
 import { toolDefinitions } from "./tool-definitions.mjs";
 import { callBridgeTool } from "./tool-dispatcher.mjs";
+import { IMAGE_RENDER_RESOURCE_URI } from "../tools/image-render/schema.mjs";
 import { beginToolEvent, finishToolEvent } from "../monitor/events.mjs";
 
 export function sendJson(res, statusCode, body) {
@@ -48,9 +50,9 @@ export async function handleMcpRequest(req, res) {
         const requested = request.params?.protocolVersion;
         result = {
           protocolVersion: typeof requested === "string" ? requested : "2025-03-26",
-          capabilities: { tools: {} },
+          capabilities: { tools: {}, resources: {} },
           serverInfo: { name: "openclaw-chatgpt-bridge", version: "0.1.0" },
-          instructions: "The public MCP surface exposes openclaw_browser for browser pages and openclaw_computer for desktop UI control. For browser work, use openclaw_browser snapshot before acting with refs from that tab; profile-dependent actions are pinned internally to Chrome. For desktop work, use openclaw_computer action=snapshot first; reuse its executionId for related actions and pass its displayFrameId with coordinate-based actions. Take a fresh snapshot after the screen changes. For computer batch, choose 1–5 predictable actions based on the latest observation; the five-step limit is a maximum, not a target. End the batch before any step that depends on inspecting the result of a UI change, then take a fresh snapshot and re-plan. Do not assume coordinate targets remain valid after the layout changes. Computer batch reduces LLM/MCP round-trips, but each desktop action still incurs a separate Gateway call. Call action=close_execution when finished; idle desktop sessions are closed automatically after five minutes. Desktop control requires the paired OpenClaw computer node to be connected. Native runtime errors are returned for troubleshooting.",
+          instructions: "The public MCP surface exposes openclaw_browser for browser pages and openclaw_computer for desktop UI control. For browser work, use openclaw_browser snapshot before acting with refs from that tab; profile-dependent actions are pinned internally to Chrome. For desktop work, use openclaw_computer action=snapshot first; reuse its executionId for related actions and pass its displayFrameId with coordinate-based actions. Take a fresh snapshot after the screen changes. For computer batch, choose 1–5 predictable actions based on the latest observation; the five-step limit is a maximum, not a target. End the batch before any step that depends on inspecting the result of a UI change, then take a fresh snapshot and re-plan. Do not assume coordinate targets remain valid after the layout changes. Computer batch reduces LLM/MCP round-trips, but each desktop action still incurs a separate Gateway call. Call action=close_execution when finished; idle desktop sessions are closed automatically after five minutes. Desktop control requires the paired OpenClaw computer node to be connected. A successful computer snapshot also returns screenshot_ref; call openclaw_image_render with that reference only when the user explicitly wants the screenshot displayed in the chat UI. Native runtime errors are returned for troubleshooting.",
         };
         break;
       }
@@ -60,6 +62,42 @@ export async function handleMcpRequest(req, res) {
       case "tools/list":
         result = { tools: toolDefinitions };
         break;
+      case "resources/list":
+        result = {
+          resources: [{
+            uri: IMAGE_RENDER_RESOURCE_URI,
+            name: "OpenClaw screenshot viewer",
+            description: "Displays a screenshot returned by openclaw_image_render.",
+            mimeType: "text/html;profile=mcp-app",
+            _meta: {
+              ui: { prefersBorder: false },
+              "openai/widgetPrefersBorder": false,
+              "openai/ui": { availableDisplayModes: ["inline"], preferredDisplayMode: "inline" },
+            },
+          }],
+        };
+        break;
+      case "resources/read": {
+        const uri = request.params?.uri;
+        if (uri !== IMAGE_RENDER_RESOURCE_URI) {
+          sendJson(res, 200, { jsonrpc: "2.0", id: request.id, error: { code: -32602, message: "Unknown resource URI." } });
+          return;
+        }
+        const html = await readFile(new URL("../tools/image-render/viewer.html", import.meta.url), "utf8");
+        result = {
+          contents: [{
+            uri: IMAGE_RENDER_RESOURCE_URI,
+            mimeType: "text/html;profile=mcp-app",
+            text: html,
+            _meta: {
+              ui: { prefersBorder: false },
+              "openai/widgetPrefersBorder": false,
+              "openai/ui": { availableDisplayModes: ["inline"], preferredDisplayMode: "inline" },
+            },
+          }],
+        };
+        break;
+      }
       case "tools/call": {
         const target = request.params?.name;
         if (typeof target !== "string") {

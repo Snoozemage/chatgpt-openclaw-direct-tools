@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  :root {
+    color-scheme: light dark;
+    --fg: var(--color, CanvasText);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; width: 100%; min-height: 0; background: transparent; }
+  body { color: var(--fg); }
+  main { display: block; width: 100%; margin: 0; padding: 0; }
+  img { display: block; width: 100%; height: auto; max-width: 100%; margin: 0; padding: 0; border: 0; border-radius: 0; object-fit: contain; }
+  img[hidden] { display: none !important; }
+  .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+</style>
+</head>
+<body>
+<main>
+  <img id="screenshot" alt="Desktop screenshot" hidden>
+  <span id="status" class="sr-only" role="status">Waiting for screenshot data…</span>
+</main>
+<script>
+(() => {
+  const image = document.getElementById("screenshot");
+  const status = document.getElementById("status");
+  let lastRef = "";
+
+  function getPayload(result) {
+    const candidates = [
+      result?._meta?.imageRender,
+      result?.meta?.imageRender,
+      result?.imageRender,
+      result?.mcp_tool_result?._meta?.imageRender,
+      result?.mcp_tool_result?.result?._meta?.imageRender,
+      result?.call_tool_result?._meta?.imageRender,
+      result?.call_tool_result?.result?._meta?.imageRender,
+      result?.toolResponseMetadata?._meta?.imageRender,
+      result?.toolResponseMetadata?.mcp_tool_result?._meta?.imageRender,
+      result?.toolResponseMetadata?.mcp_tool_result?.result?._meta?.imageRender,
+      result?.toolResponseMetadata?.call_tool_result?._meta?.imageRender,
+      result?.toolResponseMetadata?.call_tool_result?.result?._meta?.imageRender,
+      result?.toolOutput?._meta?.imageRender,
+      result?.result?._meta?.imageRender,
+      result?.toolResult?._meta?.imageRender,
+    ];
+    return candidates.find((payload) =>
+      payload && typeof payload.data === "string" && typeof payload.mimeType === "string"
+    ) ?? null;
+  }
+
+  function notifySize() {
+    try {
+      window.openai?.notifyIntrinsicHeight?.(document.documentElement.scrollHeight);
+    } catch {}
+  }
+
+  function display(result) {
+    const payload = getPayload(result);
+    if (!payload) return false;
+    if (payload.screenshotRef && payload.screenshotRef === lastRef) return true;
+    if (!/^image\/(jpeg|png|webp|gif)$/.test(payload.mimeType)) {
+      status.textContent = "Unsupported screenshot format.";
+      return true;
+    }
+
+    lastRef = payload.screenshotRef || "";
+    image.onload = () => {
+      status.textContent = "Screenshot displayed.";
+      notifySize();
+    };
+    image.onerror = () => {
+      image.hidden = true;
+      status.textContent = "Image could not be decoded or was blocked by the host policy.";
+      notifySize();
+    };
+    image.src = "data:" + payload.mimeType + ";base64," + payload.data;
+    image.hidden = false;
+    notifySize();
+    return true;
+  }
+
+  function hydrateFromHost() {
+    let openai;
+    try { openai = window.openai; } catch { return false; }
+    return display(openai?.toolResponseMetadata) || display(openai?.toolOutput) || false;
+  }
+
+  function handleMessage(event) {
+    if (event.source !== window.parent) return;
+    const message = event.data;
+    if (!message || typeof message !== "object") return;
+    if (message.method === "ui/notifications/tool-result") {
+      display(message.params?.result ?? message.params);
+    } else if (message.method === "ui/initialize") {
+      display(message.params?.toolResponseMetadata
+        ?? message.params?.toolResult
+        ?? message.params?.toolOutput
+        ?? message.params);
+    }
+  }
+
+  window.addEventListener("message", handleMessage);
+  window.addEventListener("resize", notifySize);
+  hydrateFromHost();
+})();
+</script>
+</body>
+</html>

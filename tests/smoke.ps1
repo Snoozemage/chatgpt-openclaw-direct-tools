@@ -36,10 +36,23 @@ try {
 try {
     $listed = Send-Mcp -Id 2 -Method 'tools/list'
     $toolNames = @($listed.result.tools | ForEach-Object { $_.name })
-    $expectedPublicToolNames = @('openclaw_browser', 'openclaw_computer')
+    $expectedPublicToolNames = @('openclaw_browser', 'openclaw_computer', 'openclaw_image_render')
     $missingPublicToolNames = @($expectedPublicToolNames | Where-Object { $_ -notin $toolNames })
     $publicToolNamesValid = $toolNames.Count -eq $expectedPublicToolNames.Count -and $missingPublicToolNames.Count -eq 0
-    Assert-Check $publicToolNamesValid 'Browser and Computer tools are publicly exposed' ('Missing: ' + ($missingPublicToolNames -join ', '))
+    Assert-Check $publicToolNamesValid 'Browser, Computer, and Image Render tools are publicly exposed' ('Missing: ' + ($missingPublicToolNames -join ', '))
+
+    $renderDefinition = $listed.result.tools | Where-Object { $_.name -eq 'openclaw_image_render' } | Select-Object -First 1
+    $renderSchemaValid = $null -ne $renderDefinition -and @($renderDefinition.inputSchema.required) -contains 'screenshot_ref' -and $renderDefinition._meta.ui.resourceUri -eq 'ui://openclaw/image-render/v4.html'
+    Assert-Check $renderSchemaValid 'Image Render tool declares its MCP App resource'
+
+    $resources = Send-Mcp -Id 20 -Method 'resources/list'
+    $viewerResource = $resources.result.resources | Where-Object { $_.uri -eq 'ui://openclaw/image-render/v4.html' } | Select-Object -First 1
+    Assert-Check ($null -ne $viewerResource -and $viewerResource.mimeType -eq 'text/html;profile=mcp-app') 'Image viewer resource is discoverable'
+    $viewerModes = @($viewerResource._meta.'openai/ui'.availableDisplayModes)
+    $viewerPresentationValid = $null -ne $viewerResource -and $viewerResource._meta.ui.prefersBorder -eq $false -and $viewerModes.Count -eq 1 -and $viewerModes[0] -eq 'inline'
+    Assert-Check $viewerPresentationValid 'Image viewer removes the host border and only supports inline display'
+    $viewer = Send-Mcp -Id 21 -Method 'resources/read' -Params @{ uri = 'ui://openclaw/image-render/v4.html' }
+    Assert-Check ($viewer.result.contents[0].text.Contains('id="screenshot"')) 'Image viewer resource returns HTML'
 
     $definition = $listed.result.tools | Where-Object { $_.name -eq 'openclaw_browser' } | Select-Object -First 1
     $schema = $definition.inputSchema
