@@ -10,6 +10,7 @@
     "status": "powershell -NoProfile -ExecutionPolicy Bypass -File .\\status.ps1",
     "test": "powershell -NoProfile -ExecutionPolicy Bypass -File .\\tests\\smoke.ps1",
     "test:unit": "node --test .\\tests\\*.test.mjs",
+    "export:openclaw-schemas": "powershell -NoProfile -ExecutionPolicy Bypass -File .\\scripts\\devtools\\openclaw-tool-schema-export\\run.ps1",
     "check": "powershell -NoProfile -ExecutionPolicy Bypass -File .\\tests\\check-syntax.ps1"
   },
   "engines": {
