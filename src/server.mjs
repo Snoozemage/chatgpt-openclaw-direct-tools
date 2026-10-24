@@ -2,8 +2,9 @@ import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import process from "node:process";
 import { host, port, gatewayPort } from "./config/runtime.mjs";
-import { monitorEvents, eventClients, clearMonitorEvents } from "./monitor/events.mjs";
+import { monitorEvents, eventClients, clearMonitorEvents, publishMonitorSignal } from "./monitor/events.mjs";
 import { sendJson, handleMcpRequest } from "./mcp/request-handler.mjs";
+import { listSessions, removeSessionFromMonitor } from "./mcp/session-registry.mjs";
 
 const httpServer = createServer(async (req, res) => {
   const pathname = new URL(req.url || "/", "http://" + (req.headers.host || (host + ":" + port))).pathname;
@@ -19,6 +20,21 @@ const httpServer = createServer(async (req, res) => {
     sendJson(res, 200, { events: monitorEvents.slice(-200) });
     return;
   }
+  if (req.method === "GET" && pathname === "/api/sessions") {
+    sendJson(res, 200, { sessions: listSessions() });
+    return;
+  }
+  const removeSessionMatch = req.method === "DELETE" && pathname.match(/^\/api\/sessions\/([^/]+)$/u);
+  if (removeSessionMatch) {
+    const sessionId = removeSessionMatch[1];
+    if (!removeSessionFromMonitor(sessionId)) {
+      sendJson(res, 404, { error: "Session not found." });
+      return;
+    }
+    publishMonitorSignal({ type: "session_removed", sessionId });
+    sendJson(res, 200, { ok: true, sessionId });
+    return;
+  }
   if (req.method === "POST" && pathname === "/api/events/clear") {
     const clearedCount = clearMonitorEvents();
     sendJson(res, 200, { ok: true, clearedCount, events: [] });
@@ -30,6 +46,7 @@ const httpServer = createServer(async (req, res) => {
       exportedAt: new Date().toISOString(),
       limit: 200,
       count: events.length,
+      sessions: listSessions(),
       events,
     }, null, 2);
     const date = new Date().toISOString().replace(/[:.]/g, "-");

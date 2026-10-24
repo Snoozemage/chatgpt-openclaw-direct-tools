@@ -244,3 +244,4 @@ A passing local test suite does not establish that every Browser action will wor
 - [OpenClaw MCP Relay](https://docs.openclaw.ai/plugins/mcp-relay)
 - [chatgpt-web-agent](https://github.com/AxelHu/chatgpt-web-agent)
 - [ClawConnect](https://github.com/lambda-curry/clawconnect)
+- [openchatx-mcp](https://github.com/XiaoPuOuO/openchatx-mcp)

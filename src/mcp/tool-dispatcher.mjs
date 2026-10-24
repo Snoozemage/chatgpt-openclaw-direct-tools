@@ -1,3 +1,4 @@
+import { handleStartHereTool } from "../tools/start-here/handler.mjs";
 import { handleBrowserTool } from "../tools/browser/handler.mjs";
 import { handleComputerTool } from "../tools/computer/handler.mjs";
 import { handleImageRenderTool } from "../tools/image-render/handler.mjs";
@@ -6,7 +7,7 @@ import { handleFileSearchTool } from "../tools/file-search/handler.mjs";
 import { handleRuntimeTool } from "../tools/runtime/handler.mjs";
 import { handleToolDiscovery } from "../tools/tool-discovery/handler.mjs";
 
-const handlers = [handleBrowserTool, handleComputerTool, handleImageRenderTool, handleFileTool, handleFileSearchTool, handleRuntimeTool, handleToolDiscovery];
+const handlers = [handleStartHereTool, handleBrowserTool, handleComputerTool, handleImageRenderTool, handleFileTool, handleFileSearchTool, handleRuntimeTool, handleToolDiscovery];
 
 export async function callBridgeTool(name, args = {}) {
   for (const handler of handlers) {

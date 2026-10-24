@@ -30,29 +30,17 @@ try {
     $initialized = Send-Mcp -Id 1 -Method 'initialize' -Params @{ protocolVersion = '2025-03-26'; capabilities = @{} }
     Assert-Check ($initialized.result.serverInfo.name -eq 'openclaw-chatgpt-bridge') 'MCP initialize and server identity'
     $instructions = [string]$initialized.result.instructions
-    $requiredInstructionSections = @(
-        '## 1. Scope and precedence',
-        '## 2. Autonomous execution',
-        '## 3. Tool use',
-        '## 4. Context and output discipline',
-        '## 5. File operations and code changes',
-        '## 6. Architecture and implementation quality',
-        '## 7. Validation and completion',
-        '## 8. Safety and decision boundaries',
-        '## 9. Communication'
-    )
-    $missingInstructionSections = @($requiredInstructionSections | Where-Object { -not $instructions.Contains($_) })
-    $instructionsStructured = $missingInstructionSections.Count -eq 0 -and $instructions.Contains('- Follow the most specific applicable') -and $instructions.Contains('- Validate actual model-facing MCP schemas')
-    Assert-Check $instructionsStructured 'MCP initialization provides structured agent instructions' ('Missing sections: ' + ($missingInstructionSections -join ', '))
+    $instructionsStructured = $instructions.Contains('start_here') -and $instructions.Contains('INITIALIZATION_REQUIRED') -and $instructions.Contains('not authentication')
+    Assert-Check $instructionsStructured 'MCP initialization explains per-conversation startup gating'
 } catch { Assert-Check $false 'MCP initialize' $_.Exception.Message }
 
 try {
     $listed = Send-Mcp -Id 2 -Method 'tools/list'
     $toolNames = @($listed.result.tools | ForEach-Object { $_.name })
-    $expectedPublicToolNames = @('openclaw_browser', 'openclaw_computer', 'openclaw_image_render', 'openclaw_ls', 'openclaw_read', 'openclaw_edit', 'openclaw_write', 'openclaw_apply_patch', 'openclaw_glob', 'openclaw_grep', 'openclaw_exec', 'openclaw_process')
+    $expectedPublicToolNames = @('start_here', 'openclaw_browser', 'openclaw_computer', 'openclaw_image_render', 'openclaw_ls', 'openclaw_read', 'openclaw_edit', 'openclaw_write', 'openclaw_apply_patch', 'openclaw_glob', 'openclaw_grep', 'openclaw_exec', 'openclaw_process', 'openclaw_tool_search', 'openclaw_tool_describe', 'openclaw_dispatch_action')
     $missingPublicToolNames = @($expectedPublicToolNames | Where-Object { $_ -notin $toolNames })
     $publicToolNamesValid = $toolNames.Count -eq $expectedPublicToolNames.Count -and $missingPublicToolNames.Count -eq 0
-    Assert-Check $publicToolNamesValid 'All twelve public MCP tools are exposed' ('Missing: ' + ($missingPublicToolNames -join ', '))
+    Assert-Check $publicToolNamesValid 'All sixteen public MCP tools are exposed' ('Missing: ' + ($missingPublicToolNames -join ', '))
 
     $globDefinition = $listed.result.tools | Where-Object { $_.name -eq 'openclaw_glob' } | Select-Object -First 1
     $globSchemaValid = $null -ne $globDefinition -and @($globDefinition.inputSchema.required) -contains 'pattern' -and $globDefinition.annotations.readOnlyHint -eq $true
@@ -65,6 +53,9 @@ try {
     $execDefinition = $listed.result.tools | Where-Object { $_.name -eq 'openclaw_exec' } | Select-Object -First 1
     $execSchemaValid = $null -ne $execDefinition -and @($execDefinition.inputSchema.required) -contains 'command' -and $execDefinition.inputSchema.properties.workdir -and $execDefinition.annotations.openWorldHint -eq $true
     Assert-Check $execSchemaValid 'Exec tool exposes command/workdir and open-world annotation'
+
+    $startHereDefinition = $listed.result.tools | Where-Object { $_.name -eq 'start_here' } | Select-Object -First 1
+    Assert-Check ($null -ne $startHereDefinition -and $startHereDefinition.annotations.readOnlyHint -eq $true) 'Session startup tool is exposed as read-only'
 
     $processDefinition = $listed.result.tools | Where-Object { $_.name -eq 'openclaw_process' } | Select-Object -First 1
     $processSchemaValid = $null -ne $processDefinition -and @($processDefinition.inputSchema.required) -contains 'action' -and @($processDefinition.inputSchema.properties.action.enum) -contains 'poll' -and $processDefinition.annotations.openWorldHint -eq $true
@@ -173,6 +164,7 @@ try {
 try {
     $monitorHtml = (Invoke-WebRequest -UseBasicParsing -Uri ($base + '/monitor') -TimeoutSec 5).Content
     Assert-Check ($monitorHtml.Contains('id="clear"') -and $monitorHtml.Contains('/api/events/clear')) 'Monitor UI exposes Clear'
+    Assert-Check ($monitorHtml.Contains('id="sessions"') -and $monitorHtml.Contains('/api/sessions') -and $monitorHtml.Contains('Needs start_here')) 'Monitor UI exposes per-chat sessions'
     Assert-Check (-not $monitorHtml.Contains('confirm(')) 'Monitor Clear requires no confirmation dialog'
     $copyUiValid = $monitorHtml.Contains('id="copy"') -and $monitorHtml.Contains('Copy log') -and $monitorHtml.Contains('navigator.clipboard.writeText') -and $monitorHtml.Contains('copyHistory') -and -not $monitorHtml.Contains('id="export"')
     Assert-Check $copyUiValid 'Monitor UI copies events to clipboard'
@@ -181,6 +173,8 @@ try {
 } catch { Assert-Check $false 'Monitor UI' $_.Exception.Message }
 
 try {
+    $sessionResponse = Invoke-RestMethod -Uri ($base + '/api/sessions') -TimeoutSec 5
+    Assert-Check ($null -ne $sessionResponse.sessions) 'Monitor sessions endpoint returns a session list'
     $beforeClear = Invoke-RestMethod -Uri ($base + '/api/events') -TimeoutSec 5
     $clearResult = Invoke-RestMethod -Uri ($base + '/api/events/clear') -Method Post -TimeoutSec 5
     $afterClear = Invoke-RestMethod -Uri ($base + '/api/events') -TimeoutSec 5
