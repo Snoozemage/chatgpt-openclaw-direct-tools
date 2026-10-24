@@ -1,10 +1,11 @@
 # ChatGPT OpenClaw Direct Tools Bridge
 
 [![Node.js 22.17+](https://img.shields.io/badge/Node.js-22.17%2B-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
-[![Platform: Windows](https://img.shields.io/badge/platform-Windows-0078D4?logo=windows&logoColor=white)](https://www.microsoft.com/windows)
-[![Protocol: MCP](https://img.shields.io/badge/protocol-MCP-5B5BD6)](https://modelcontextprotocol.io/)
+[![OpenClaw Integration](https://img.shields.io/badge/OpenClaw-Integration-FF6B35)](https://openclaw.ai/)
+[![Protocol: MCP](https://img.shields.io/badge/Protocol-MCP-5B5BD6)](https://modelcontextprotocol.io/)
+[![Built for ChatGPT](https://img.shields.io/badge/Built%20for-ChatGPT-74AA9C?logo=openai&logoColor=white)](https://chatgpt.com/)
 
-A Windows-focused Model Context Protocol (MCP) bridge that exposes OpenClaw browser, desktop, and file tools directly to ChatGPT through the OpenAI Secure MCP Tunnel, plus bridge-native screenshot rendering, local project search, and dynamic native-tool discovery. It exposes 15 public MCP tools: browser and computer control, five file-operation tools, image rendering, glob/grep search, exec/process, and the discovery trio (`openclaw_tool_search`, `openclaw_tool_describe`, and `openclaw_dispatch_action`) without routing routine actions through the OpenClaw main agent.
+A Model Context Protocol (MCP) bridge that exposes OpenClaw browser, desktop, and file tools directly to ChatGPT through the OpenAI Secure MCP Tunnel, plus bridge-native screenshot rendering, local project search, and dynamic native-tool discovery. It exposes 16 public MCP tools: browser and computer control, five file-operation tools, image rendering, glob/grep search, exec/process, and the discovery trio (`openclaw_tool_search`, `openclaw_tool_describe`, and `openclaw_dispatch_action`) without routing routine actions through the OpenClaw main agent.
 
 The repository also includes Windows lifecycle scripts and a local call monitor for inspecting tool arguments, results, timing, and errors.
 
@@ -14,9 +15,9 @@ The repository also includes Windows lifecycle scripts and a local call monitor 
 
 ## 1. Project Overview
 
-This project provides a small, Windows-first integration layer between ChatGPT and a local OpenClaw installation. The intent is to keep the public MCP surface explicit and easy to troubleshoot while allowing each native tool to be added independently.
+This project provides a small integration layer between ChatGPT and a local OpenClaw installation. The bridge is built on Node.js, with platform-specific lifecycle scripts kept separate so support for additional operating systems can be added without changing the public MCP tool surface. Windows is the currently documented and supported setup. The intent is to keep the public MCP surface explicit and easy to troubleshoot while allowing each native tool to be added independently.
 
-The bridge exposes fifteen public MCP tools. Browser, Computer, and Files wrap their supported OpenClaw runtime tools; `openclaw_image_render`, `openclaw_glob`, and `openclaw_grep` are bridge-native capabilities; `openclaw_exec` and `openclaw_process` wrap OpenClaw's native runtime tools. The discovery trio searches the live effective tool catalog, returns exact schemas built by the installed runtime, and dispatches eligible unwrapped tools through the Gateway. It intentionally omits native tools already covered by bridge wrappers.
+The bridge exposes sixteen public MCP tools. Browser, Computer, and Files wrap their supported OpenClaw runtime tools; `openclaw_image_render`, `openclaw_glob`, and `openclaw_grep` are bridge-native capabilities; `openclaw_exec` and `openclaw_process` wrap OpenClaw's native runtime tools. The discovery trio searches the live effective tool catalog, returns exact schemas built by the installed runtime, and dispatches eligible unwrapped tools through the Gateway. It intentionally omits native tools already covered by bridge wrappers.
 
 ### Core capabilities
 
@@ -25,7 +26,7 @@ The bridge exposes fifteen public MCP tools. Browser, Computer, and Files wrap t
 - **Schema-led tool discovery** — expose supported browser, desktop, and file-operation contracts to the MCP client.
 - **Local project search** — `openclaw_glob` uses Node.js's built-in `fs/promises.glob()`; `openclaw_grep` invokes ripgrep (`rg`) directly with structured JSON output and reports matching lines and line numbers. Ripgrep respects standard ignore files such as `.gitignore`.
 - **Live call monitor** — inspect running, successful, and failed calls, including arguments, output, duration, and available diagnostics.
-- **Windows lifecycle management** — configure, start, inspect, and stop bridge-related processes with PowerShell scripts.
+- **Lifecycle management** — configure, start, inspect, and stop bridge-related processes through npm commands backed by platform-specific scripts.
 - **Runtime diagnostics** — retain native tool errors and attach relevant Gateway log context when invocation fails.
 - **Local configuration isolation** — keep generated configuration, tunnel profiles, API-key material, and logs outside the Git repository.
 
@@ -111,7 +112,9 @@ chatgpt-openclaw-direct-tools/
 │   │   └── runtime.mjs            # Runtime paths and Gateway configuration
 │   ├── mcp/
 │   │   ├── format.mjs             # MCP result formatting
-│   │   ├── request-handler.mjs    # MCP protocol request handling
+│   │   ├── instructions.mjs       # MCP and session-start instructions
+│   │   ├── sdk-server.mjs         # MCP SDK server and tool registration
+│   │   ├── session-registry.mjs   # Conversation-scoped session state
 │   │   ├── tool-definitions.mjs   # Public tool schemas
 │   │   └── tool-dispatcher.mjs    # Public tool routing
 │   ├── monitor/
@@ -134,14 +137,17 @@ chatgpt-openclaw-direct-tools/
 │   ├── relay-input-epoch.test.mjs
 │   ├── check-syntax.ps1
 │   └── smoke.ps1
+├── scripts/
+│   └── windows/
+│       ├── setup.ps1
+│       ├── start.ps1
+│       ├── stop.ps1
+│       ├── status.ps1
+│       ├── start-on-logon.ps1
+│       ├── start-monitor.ps1
+│       └── bridge-supervisor.ps1
 ├── docs/
 │   └── TOOL_EXPOSURE_GUIDE.md
-├── setup.ps1
-├── start.ps1
-├── start-on-logon.ps1
-├── start-monitor.ps1
-├── status.ps1
-├── stop.ps1
 ├── package.json
 └── README.md
 ```
@@ -154,8 +160,9 @@ Public schemas are registered in `src/mcp/tool-definitions.mjs`; their handlers 
 
 ### Requirements
 
-- Windows and PowerShell.
+- Windows and PowerShell for the currently supported lifecycle scripts.
 - Node.js **22.17 or later** (`fs/promises.glob()` is stable in this release line).
+- npm (used by setup to install the locked Model Context Protocol SDK dependencies).
 - ripgrep (`rg.exe`) available on `PATH`. You can set `OPENCLAW_RIPGREP_PATH` to an executable path when it is not on `PATH`.
 - An installed and configured OpenClaw runtime and Gateway.
 - An OpenAI Secure MCP Tunnel configuration for the ChatGPT custom MCP connector.
@@ -168,7 +175,7 @@ From PowerShell, run the setup wizard in the repository root:
 npm run setup
 ```
 
-Follow the prompts to configure the OpenClaw paths, bridge and Gateway ports, tunnel settings, and required API-key material. The setup script validates the local runtime configuration and saves generated settings outside the repository.
+Follow the prompts to configure the OpenClaw paths, bridge and Gateway ports, tunnel settings, and required API-key material. The setup script installs the locked MCP SDK dependencies with `npm ci`, validates the local runtime configuration, and saves generated settings outside the repository.
 
 The default local application directory is:
 
@@ -202,7 +209,9 @@ npm stop
 
 The stop script only stops a Gateway process when the launcher started it and the recorded PID still matches the expected command. A pre-existing Gateway process is left running.
 
-For Windows sign-in startup, configure the scheduled task to call `start-on-logon.ps1`. This wrapper records startup attempts and retries once after a failure. The `start-monitor.ps1` script is retained as a compatibility alias for the combined launcher.
+For Windows sign-in startup, configure the scheduled task to call `scripts/windows/start-on-logon.ps1`. This wrapper records startup attempts and retries once after a failure. The `scripts/windows/start-monitor.ps1` script is retained as a compatibility alias for the combined launcher.
+
+The bridge runs as a child owned by `scripts/windows/bridge-supervisor.ps1`. Monitor restart exits that child; the supervisor starts a replacement and verifies `/healthz` against the new PID. The supervisor does not manage the OpenClaw Gateway or Secure MCP Tunnel. `scripts/windows/stop.ps1` signals the supervisor to stop before shutting down the rest of the stack.
 
 After startup, configure the ChatGPT custom MCP connector to use the matching Secure MCP Tunnel. Start a fresh conversation, enable the connector's tool, and begin with a low-risk request such as checking Browser status or listing tabs.
 
@@ -223,7 +232,7 @@ Run the live smoke suite against a running local bridge:
 npm test -- -BaseUrl http://127.0.0.1:19002
 ```
 
-The static check validates JavaScript and PowerShell syntax and checks selected architecture and lifecycle contracts. Unit tests cover the Browser MCP schema and browser relay input-access regressions. The smoke suite exercises live bridge/Gateway behavior; it requires a working local runtime and may depend on the installed OpenClaw configuration.
+The static check validates JavaScript and PowerShell syntax and checks selected architecture and lifecycle contracts. Unit tests cover MCP SDK initialization/session behavior, the Browser MCP schema, and browser relay input-access regressions. The smoke suite exercises live bridge/Gateway behavior; it requires a working local runtime and may depend on the installed OpenClaw configuration.
 
 A passing local test suite does not establish that every Browser action will work in every profile or runtime state.
 

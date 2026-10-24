@@ -18,7 +18,14 @@ function Assert-Check([bool]$Condition, [string]$Name, [string]$Details = '') {
 
 function Send-Mcp([int]$Id, [string]$Method, [hashtable]$Params = @{}) {
     $body = @{ jsonrpc = '2.0'; id = $Id; method = $Method; params = $Params } | ConvertTo-Json -Depth 20
-    Invoke-RestMethod -Uri ($script:base + '/mcp') -Method Post -ContentType 'application/json' -Body $body -TimeoutSec 60
+    $response = Invoke-WebRequest -Uri ($script:base + '/mcp') -Method Post -ContentType 'application/json' -Headers @{ Accept = 'application/json, text/event-stream' } -Body $body -TimeoutSec 60
+    $contentType = [string]$response.Headers['Content-Type']
+    if ($contentType -match 'text/event-stream') {
+        $dataLine = $response.Content -split '\r?\n' | Where-Object { $_.StartsWith('data:') } | Select-Object -Last 1
+        if (-not $dataLine) { throw "MCP SDK returned an empty event stream for $Method." }
+        return ($dataLine.Substring(5).Trim() | ConvertFrom-Json)
+    }
+    return ($response.Content | ConvertFrom-Json)
 }
 
 try {
@@ -30,8 +37,8 @@ try {
     $initialized = Send-Mcp -Id 1 -Method 'initialize' -Params @{ protocolVersion = '2025-03-26'; capabilities = @{} }
     Assert-Check ($initialized.result.serverInfo.name -eq 'openclaw-chatgpt-bridge') 'MCP initialize and server identity'
     $instructions = [string]$initialized.result.instructions
-    $instructionsStructured = $instructions.Contains('start_here') -and $instructions.Contains('INITIALIZATION_REQUIRED') -and $instructions.Contains('not authentication')
-    Assert-Check $instructionsStructured 'MCP initialization explains per-conversation startup gating'
+    $instructionsStructured = $instructions.Contains('start_here') -and $instructions.Contains('# Tool routing') -and $instructions.Contains('project_manage') -and $instructions.Contains('subagent_run')
+    Assert-Check $instructionsStructured 'MCP initialization exposes the full OpenChatX-derived instructions'
 } catch { Assert-Check $false 'MCP initialize' $_.Exception.Message }
 
 try {

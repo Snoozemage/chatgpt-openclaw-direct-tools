@@ -2,11 +2,13 @@
 param([switch]$NoBrowser)
 
 $ErrorActionPreference = 'Stop'
-$RepoRoot = $PSScriptRoot
+$RepoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
 $AppHome = Join-Path $env:LOCALAPPDATA 'OpenClawChatGPTBridge'
 $ConfigFile = Join-Path $AppHome 'config.json'
 $GatewayPidFile = Join-Path $AppHome 'gateway.pid'
 $BridgePidFile = Join-Path $AppHome 'bridge.pid'
+$BridgeSupervisorPidFile = Join-Path $AppHome 'bridge-supervisor.pid'
+$BridgeSupervisorStopFile = Join-Path $AppHome 'bridge-supervisor.stop'
 $TunnelPidFile = Join-Path $AppHome 'tunnel-client.pid'
 
 function Read-LocalConfig {
@@ -30,6 +32,26 @@ function Wait-Port([int]$Port, [int]$Seconds) {
 function Wait-Json([string]$Url, [int]$Seconds) {
     $until = (Get-Date).AddSeconds($Seconds)
     do { $v = Get-Json $Url; if ($null -ne $v) { return $v }; Start-Sleep -Milliseconds 500 } while ((Get-Date) -lt $until)
+    return $null
+}
+function Get-BridgeSupervisorProcess([int]$ProcessId = 0) {
+    $id = $ProcessId
+    if ($id -le 0) {
+        if (-not (Test-Path -LiteralPath $BridgeSupervisorPidFile)) { return $null }
+        if (-not [int]::TryParse((Get-Content -LiteralPath $BridgeSupervisorPidFile -Raw).Trim(), [ref]$id) -or $id -le 0) {
+            Remove-Item -LiteralPath $BridgeSupervisorPidFile -Force
+            return $null
+        }
+    }
+
+    $proc = Get-CimInstance Win32_Process -Filter "ProcessId = $id" -ErrorAction SilentlyContinue
+    $supervisorScript = Join-Path $PSScriptRoot 'bridge-supervisor.ps1'
+    $expectedExecutable = Join-Path $PSHOME 'powershell.exe'
+    if ($proc -and $proc.ExecutablePath -ieq $expectedExecutable -and $proc.CommandLine -and $proc.CommandLine.IndexOf($supervisorScript, [StringComparison]::OrdinalIgnoreCase) -ge 0) {
+        return $proc
+    }
+
+    if ($ProcessId -le 0) { Remove-Item -LiteralPath $BridgeSupervisorPidFile -Force -ErrorAction SilentlyContinue }
     return $null
 }
 function Start-LoggedProcess([string]$FilePath, [string]$Arguments, [string]$OutFile, [string]$ErrFile, [string]$WorkingDirectory) {
@@ -83,24 +105,73 @@ if (Test-Port $gatewayPort) {
 }
 
 $base = 'http://127.0.0.1:' + $Cfg.bridgePort
+$scriptPath = Join-Path $RepoRoot 'src\server.mjs'
+$supervisorScript = Join-Path $PSScriptRoot 'bridge-supervisor.ps1'
+$supervisor = Get-BridgeSupervisorProcess
+$supervisorId = 0
 $health = Get-Json ($base + '/healthz')
-if ($health -and $health.server -eq 'openclaw-chatgpt-bridge') {
-    Write-Host "MCP bridge already running at $base" -ForegroundColor Green
-} else {
-    if (Test-Port ([int]$Cfg.bridgePort)) { throw "Bridge port $($Cfg.bridgePort) is occupied by a different process. Change it in local config/setup.ps1." }
-    Write-Host "Starting MCP bridge at $base ..."
-    $out = Join-Path $LogDir 'bridge.stdout.log'
-    $err = Join-Path $LogDir 'bridge.stderr.log'
-    $scriptPath = Join-Path $RepoRoot 'src\server.mjs'
-    $proc = Start-LoggedProcess -FilePath ([string]$Cfg.nodePath) -Arguments ('"' + $scriptPath + '"') -OutFile $out -ErrFile $err -WorkingDirectory $RepoRoot
-    Set-Content -LiteralPath $BridgePidFile -Value $proc.Id -Encoding ASCII
-    $health = Wait-Json ($base + '/healthz') 45
-    if (-not $health -or -not $health.ok) {
-        $details = if (Test-Path $err) { (Get-Content $err -Tail 30) -join [Environment]::NewLine } else { 'No stderr log available.' }
-        throw "Bridge failed to start. See $err. $details"
+
+if (-not $supervisor) {
+    if ($health -and $health.server -eq 'openclaw-chatgpt-bridge') {
+        $existingBridgeId = 0
+        if (-not [int]::TryParse([string]$health.pid, [ref]$existingBridgeId) -or $existingBridgeId -le 0) {
+            throw 'An unmanaged bridge is responding but did not report its PID. Refusing to replace an unidentified process.'
+        }
+        $existingBridge = Get-CimInstance Win32_Process -Filter "ProcessId = $existingBridgeId" -ErrorAction SilentlyContinue
+        $matchesBridge = $existingBridge -and $existingBridge.ExecutablePath -ieq [string]$Cfg.nodePath -and $existingBridge.CommandLine -and $existingBridge.CommandLine.IndexOf($scriptPath, [StringComparison]::OrdinalIgnoreCase) -ge 0
+        if (-not $matchesBridge) {
+            throw "Bridge health endpoint belongs to an unexpected process (PID $existingBridgeId). Refusing to stop it."
+        }
+        Write-Host "Moving bridge PID $existingBridgeId under the bridge supervisor..."
+        Stop-Process -Id $existingBridgeId -Force
+        $exitDeadline = (Get-Date).AddSeconds(10)
+        while ((Get-Process -Id $existingBridgeId -ErrorAction SilentlyContinue) -and (Get-Date) -lt $exitDeadline) {
+            Start-Sleep -Milliseconds 100
+        }
+        if (Get-Process -Id $existingBridgeId -ErrorAction SilentlyContinue) {
+            throw "Unmanaged bridge PID $existingBridgeId did not stop; supervisor startup was cancelled."
+        }
+    } elseif (Test-Port ([int]$Cfg.bridgePort)) {
+        throw "Bridge port $($Cfg.bridgePort) is occupied by a different process. Change it in local config/setup.ps1."
     }
-    Write-Host "MCP bridge started (PID $($proc.Id))." -ForegroundColor Green
+
+    if (Test-Path -LiteralPath $BridgeSupervisorStopFile) {
+        Remove-Item -LiteralPath $BridgeSupervisorStopFile -Force
+    }
+    Write-Host "Starting bridge supervisor for $base ..."
+    $supervisorOut = Join-Path $LogDir 'bridge-supervisor.stdout.log'
+    $supervisorErr = Join-Path $LogDir 'bridge-supervisor.stderr.log'
+    $supervisorArgs = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "' + $supervisorScript + '"'
+    $supervisorProcess = Start-LoggedProcess -FilePath (Join-Path $PSHOME 'powershell.exe') -Arguments $supervisorArgs -OutFile $supervisorOut -ErrFile $supervisorErr -WorkingDirectory $RepoRoot
+    $supervisorId = $supervisorProcess.Id
+} else {
+    $supervisorId = [int]$supervisor.ProcessId
+    Write-Host "Bridge supervisor already running (PID $supervisorId)." -ForegroundColor Green
 }
+
+$bridgeDeadline = (Get-Date).AddSeconds(45)
+$managedHealth = $null
+$managedBridgeId = 0
+do {
+    $supervisor = Get-BridgeSupervisorProcess $supervisorId
+    if ($null -eq $supervisor) {
+        $details = if (Test-Path -LiteralPath (Join-Path $LogDir 'bridge-supervisor.stderr.log')) { (Get-Content (Join-Path $LogDir 'bridge-supervisor.stderr.log') -Tail 30) -join [Environment]::NewLine } else { 'No supervisor stderr log available.' }
+        throw "Bridge supervisor exited before the bridge became healthy. $details"
+    }
+    $managedHealth = Get-Json ($base + '/healthz')
+    $managedBridgeId = 0
+    if (Test-Path -LiteralPath $BridgePidFile) {
+        [void][int]::TryParse((Get-Content -LiteralPath $BridgePidFile -Raw).Trim(), [ref]$managedBridgeId)
+    }
+    if ($managedHealth -and $managedHealth.ok -and $managedHealth.server -eq 'openclaw-chatgpt-bridge' -and $managedBridgeId -gt 0 -and [int]$managedHealth.pid -eq $managedBridgeId) { break }
+    Start-Sleep -Milliseconds 250
+} while ((Get-Date) -lt $bridgeDeadline)
+
+if (-not $managedHealth -or -not $managedHealth.ok -or $managedBridgeId -le 0 -or [int]$managedHealth.pid -ne $managedBridgeId) {
+    $details = if (Test-Path -LiteralPath (Join-Path $LogDir 'bridge.stderr.log')) { (Get-Content (Join-Path $LogDir 'bridge.stderr.log') -Tail 30) -join [Environment]::NewLine } else { 'No bridge stderr log available.' }
+    throw "Bridge supervisor did not produce a healthy managed bridge at $base within 45 seconds. $details"
+}
+Write-Host "MCP bridge supervised at $base (PID $managedBridgeId; supervisor PID $($supervisor.ProcessId))." -ForegroundColor Green
 
 $tunnelHealth = 'http://127.0.0.1:' + $Cfg.tunnelHealthPort
 $ready = Get-Json ($tunnelHealth + '/readyz')

@@ -13,7 +13,7 @@ foreach ($file in $files) {
 }
 
 $scriptFiles = @(
-    Get-ChildItem -LiteralPath $repoRoot -File -Filter '*.ps1'
+    Get-ChildItem -LiteralPath (Join-Path $repoRoot 'scripts\windows') -Recurse -File -Filter '*.ps1'
     Get-ChildItem -LiteralPath (Join-Path $repoRoot 'tests') -Recurse -File -Filter '*.ps1'
 )
 foreach ($script in $scriptFiles) {
@@ -44,14 +44,19 @@ if (Test-Path -LiteralPath $legacyOpenClawDir) {
 }
 Write-Host 'Checking source architecture: obsolete tool modules and src/openclaw directory are absent.'
 
-$startScript = Get-Content -LiteralPath (Join-Path $repoRoot 'start.ps1') -Raw
-$stopScript = Get-Content -LiteralPath (Join-Path $repoRoot 'stop.ps1') -Raw
+$startScript = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts\windows\start.ps1') -Raw
+$stopScript = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts\windows\stop.ps1') -Raw
+$serverScript = Get-Content -LiteralPath (Join-Path $sourceRoot 'server.mjs') -Raw
+$supervisorScript = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts\windows\bridge-supervisor.ps1') -Raw
 $gatewayStartValid = $startScript.Contains('gateway run --port') -and $startScript.Contains('gateway.pid') -and $startScript.Contains('Wait-Port $gatewayPort 300')
-$logonScript = Get-Content -LiteralPath (Join-Path $repoRoot 'start-on-logon.ps1') -Raw
+$logonScript = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts\windows\start-on-logon.ps1') -Raw
 $logonStartValid = $logonScript.Contains('autostart.log') -and $logonScript.Contains('param()') -and $logonScript.Contains('$maxAttempts = 2') -and $logonScript.Contains('Retrying in 20 seconds')
 $gatewayStopValid = $stopScript.Contains('Stop-OwnedProcess -PidFile $GatewayPidFile') -and $stopScript.Contains('gateway run')
+$bridgeSupervisorValid = $startScript.Contains('bridge-supervisor.ps1') -and $supervisorScript.Contains('OPENCLAW_BRIDGE_SUPERVISED') -and $supervisorScript.Contains('health.pid') -and $supervisorScript.Contains('restarting the bridge only') -and $stopScript.Contains('Stop-BridgeSupervisor')
+$bridgeRestartValid = $serverScript.Contains('OPENCLAW_BRIDGE_SUPERVISED') -and -not $serverScript.Contains('restart-bridge.ps1') -and -not $serverScript.Contains('spawn("powershell.exe"')
 if (-not $gatewayStartValid) { throw 'Gateway startup contract failed: start.ps1 must launch Gateway, record its PID, and allow up to 300 seconds for the listener.' }
 if (-not $logonStartValid) { throw 'Logon startup contract failed: start-on-logon.ps1 must log startup output and retry one failed attempt.' }
 if (-not $gatewayStopValid) { throw 'Gateway shutdown contract failed: stop.ps1 must stop only the process recorded in gateway.pid after command identity validation.' }
-Write-Host 'Checking lifecycle contract: Gateway start, diagnostic logon wrapper, and ownership-aware stop are present.'
+if (-not $bridgeSupervisorValid -or -not $bridgeRestartValid) { throw 'Bridge lifecycle contract failed: Monitor restart must exit the supervised bridge and let its external supervisor restart only that child.' }
+Write-Host 'Checking lifecycle contract: Gateway ownership, bridge supervisor restart, diagnostic logon wrapper, and ownership-aware stop are present.'
 Write-Host ("All checks passed: " + $files.Count + " JavaScript module(s), " + $scriptFiles.Count + " PowerShell script(s).")

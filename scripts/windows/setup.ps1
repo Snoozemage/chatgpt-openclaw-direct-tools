@@ -10,7 +10,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$RepoRoot = $PSScriptRoot
+$RepoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
 $AppHome = Join-Path $env:LOCALAPPDATA 'OpenClawChatGPTBridge'
 $ConfigFile = Join-Path $AppHome 'config.json'
 $SecretDir = Join-Path $AppHome 'secrets'
@@ -188,11 +188,18 @@ $ripgrepVersion = (& $ripgrepPath --version 2>&1 | Select-Object -First 1 | Out-
 if ($LASTEXITCODE -ne 0 -or $ripgrepVersion -notmatch '^ripgrep ') { throw "Could not run ripgrep at $ripgrepPath." }
 Write-Host "Using $ripgrepVersion at $ripgrepPath" -ForegroundColor Green
 
-$globalNpmRoot = $null
 $npmCommand = Get-Command npm.cmd -ErrorAction SilentlyContinue
-if ($npmCommand) {
-    try { $globalNpmRoot = (& $npmCommand.Source root -g 2>$null | Select-Object -Last 1).Trim() } catch { $globalNpmRoot = $null }
+if (-not $npmCommand) { throw 'npm.cmd is required to install the bridge SDK dependencies. Install Node.js with npm and add it to PATH.' }
+Write-Step 'Install bridge SDK dependencies'
+Push-Location $RepoRoot
+try {
+    & $npmCommand.Source ci --no-audit --no-fund
+    if ($LASTEXITCODE -ne 0) { throw "npm ci failed with exit code $LASTEXITCODE." }
 }
+finally { Pop-Location }
+
+$globalNpmRoot = $null
+try { $globalNpmRoot = (& $npmCommand.Source root -g 2>$null | Select-Object -Last 1).Trim() } catch { $globalNpmRoot = $null }
 $cliCandidates = @(
     $config.openclawCliPath,
     $(if ($globalNpmRoot) { Join-Path $globalNpmRoot 'openclaw\openclaw.mjs' }),
@@ -264,5 +271,5 @@ $doctorExit = $LASTEXITCODE
 if ($doctorExit -ne 0) { Write-Warning 'tunnel-client doctor reported a problem; the local configuration was saved so it can be corrected with status.ps1 and the README troubleshooting section.' }
 
 Write-Host "`nSetup saved. Local configuration: $ConfigFile" -ForegroundColor Green
-Write-Host 'Next: run .\start.ps1 to start the bridge and tunnel, then open the local Overview.' -ForegroundColor Green
+Write-Host 'Next: run npm start to start the bridge and tunnel, then open the local Overview.' -ForegroundColor Green
 if ($doctorExit -ne 0) { exit $doctorExit }

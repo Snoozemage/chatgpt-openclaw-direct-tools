@@ -48,6 +48,39 @@ const httpServer = createServer(async (req, res) => {
     sendJson(res, 200, { ok: true, sessionId });
     return;
   }
+  if (req.method === "POST" && pathname === "/api/restart") {
+    const origin = req.headers.origin;
+    let localOrigin = false;
+    try {
+      const parsedOrigin = new URL(origin);
+      localOrigin = parsedOrigin.protocol === "http:"
+        && ["127.0.0.1", "localhost", "[::1]"].includes(parsedOrigin.hostname)
+        && parsedOrigin.port === String(port);
+    } catch {}
+
+    if (!localOrigin) {
+      sendJson(res, 403, { error: "Restart requests must come from the local monitor." });
+      return;
+    }
+    if (process.env.OPENCLAW_BRIDGE_SUPERVISED !== "1") {
+      sendJson(res, 503, { error: "Bridge restart requires the bridge supervisor. Start it with scripts/windows/start.ps1." });
+      return;
+    }
+    if (restartPending) {
+      sendJson(res, 409, { error: "Bridge restart is already pending." });
+      return;
+    }
+
+    restartPending = true;
+    sendJson(res, 202, {
+      ok: true,
+      status: "scheduled",
+      previousPid: process.pid,
+      message: "The bridge supervisor will restart the bridge. Gateway and Tunnel are not managed by it.",
+    });
+    setTimeout(shutdown, 300);
+    return;
+  }
   if (req.method === "POST" && pathname === "/api/events/clear") {
     const clearedCount = clearMonitorEvents();
     sendJson(res, 200, { ok: true, clearedCount, events: [] });
@@ -84,7 +117,7 @@ const httpServer = createServer(async (req, res) => {
     return;
   }
   if (req.method === "GET" && pathname === "/healthz") {
-    sendJson(res, 200, { ok: true, server: "openclaw-chatgpt-bridge", version: "0.1.0" });
+    sendJson(res, 200, { ok: true, server: "openclaw-chatgpt-bridge", version: "0.1.0", pid: process.pid });
     return;
   }
   if (pathname !== "/mcp") {
