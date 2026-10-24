@@ -5,9 +5,9 @@ const ACTIVE_WINDOW_MS = 30_000;
 const MAX_SESSION_KEY_LENGTH = 512;
 
 export function requestSessionId(req) {
-  const headers = req?.headers ?? {};
+  const headers = req?.headers ?? req ?? {};
   for (const name of ["x-openai-session", "mcp-session-id", "x-openai-conversation-id", "x-openai-session-id"]) {
-    const value = headers[name];
+    const value = typeof headers.get === "function" ? headers.get(name) : headers[name];
     const normalized = Array.isArray(value) ? value[0] : value;
     if (typeof normalized !== "string") continue;
     const candidate = normalized.trim();

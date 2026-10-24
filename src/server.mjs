@@ -1,10 +1,23 @@
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import process from "node:process";
+import {
+  localhostHostValidation,
+  localhostOriginValidation,
+  toNodeHandler,
+} from "@modelcontextprotocol/node";
 import { host, port, gatewayPort } from "./config/runtime.mjs";
 import { monitorEvents, eventClients, clearMonitorEvents, publishMonitorSignal } from "./monitor/events.mjs";
-import { sendJson, handleMcpRequest } from "./mcp/request-handler.mjs";
 import { listSessions, removeSessionFromMonitor } from "./mcp/session-registry.mjs";
+import { mcpHandler } from "./mcp/sdk-server.mjs";
+
+const nodeMcpHandler = toNodeHandler(mcpHandler, {
+  maxRequestBodySize: 2 * 1024 * 1024,
+  onerror: (error) => console.error("MCP Node adapter error:", error),
+});
+const validateMcpHost = localhostHostValidation();
+const validateMcpOrigin = localhostOriginValidation();
+let restartPending = false;
 
 const httpServer = createServer(async (req, res) => {
   const pathname = new URL(req.url || "/", "http://" + (req.headers.host || (host + ":" + port))).pathname;
@@ -83,14 +96,31 @@ const httpServer = createServer(async (req, res) => {
     res.end();
     return;
   }
-  await handleMcpRequest(req, res);
+  if (!validateMcpHost(req, res)) return;
+  if (!validateMcpOrigin(req, res)) return;
+  await nodeMcpHandler(req, res);
 });
+
+function sendJson(res, statusCode, body) {
+  res.writeHead(statusCode, { "content-type": "application/json", "cache-control": "no-store" });
+  res.end(JSON.stringify(body));
+}
 
 httpServer.listen(port, host, () => {
   console.log("OpenClaw MCP bridge listening at http://" + host + ":" + port + "/mcp");
   console.log("Health: http://" + host + ":" + port + "/healthz");
   console.log("Gateway: 127.0.0.1:" + gatewayPort);
 });
-function shutdown() { httpServer.close(() => process.exit(0)); }
+
+function shutdown() {
+  for (const client of eventClients) {
+    try { client.end(); } catch {}
+  }
+  eventClients.clear();
+  httpServer.close(() => {
+    void mcpHandler.close().finally(() => process.exit(0));
+  });
+  httpServer.closeAllConnections?.();
+}
 process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);

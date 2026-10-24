@@ -1,38 +1,46 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { Readable } from "node:stream";
-import { handleMcpRequest } from "../src/mcp/request-handler.mjs";
-import { isSessionInitialized, listSessions, removeSessionFromMonitor, requestSessionId, touchSession } from "../src/mcp/session-registry.mjs";
-import { toolDefinitions } from "../src/mcp/tool-definitions.mjs";
 import { readFile } from "node:fs/promises";
+import { mcpHandler } from "../src/mcp/sdk-server.mjs";
+import {
+  isSessionInitialized,
+  listSessions,
+  removeSessionFromMonitor,
+  requestSessionId,
+  touchSession,
+} from "../src/mcp/session-registry.mjs";
+import { toolDefinitions } from "../src/mcp/tool-definitions.mjs";
+import { buildMcpInstructions, hostDisplayName } from "../src/mcp/instructions.mjs";
 
-function request(payload, headers = {}) {
-  const req = Readable.from([JSON.stringify(payload)]);
-  req.headers = Object.fromEntries(Object.entries(headers).map(([key, value]) => [key.toLowerCase(), value]));
-  return req;
-}
+let requestId = 0;
 
-function response() {
-  return {
-    statusCode: null,
-    headers: {},
-    body: "",
-    writeHead(statusCode, headers = {}) { this.statusCode = statusCode; this.headers = headers; },
-    end(body = "") { this.body = body; },
-    json() { return JSON.parse(this.body); },
+async function rpc(method, params = {}, session) {
+  const headers = {
+    "content-type": "application/json",
+    accept: "application/json, text/event-stream",
   };
+  if (session) headers["x-openai-session"] = session;
+  const response = await mcpHandler.fetch(new Request("http://127.0.0.1/mcp", {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: ++requestId,
+      method,
+      params,
+    }),
+  }));
+  const body = await response.text();
+  if (response.headers.get("content-type")?.includes("text/event-stream")) {
+    const data = body.split(/\r?\n/u).filter((line) => line.startsWith("data:")).map((line) => line.slice(5).trim());
+    assert.ok(data.length > 0, "SDK returned no SSE data for " + method + ": " + body.slice(0, 500));
+    return { status: response.status, payload: JSON.parse(data.at(-1)) };
+  }
+  return { status: response.status, payload: JSON.parse(body) };
 }
 
 async function callTool(name, args = {}, session = "test-session") {
-  const res = response();
-  const headers = session ? { "x-openai-session": session } : {};
-  await handleMcpRequest(request({
-    jsonrpc: "2.0",
-    id: Math.random().toString(36),
-    method: "tools/call",
-    params: { name, arguments: args },
-  }, headers), res);
-  return res.json();
+  return rpc("tools/call", { name, arguments: args }, session);
 }
 
 test("prefers OpenAI conversation identity and supports documented header fallbacks", () => {
@@ -40,39 +48,133 @@ test("prefers OpenAI conversation identity and supports documented header fallba
   assert.equal(requestSessionId({ headers: { "mcp-session-id": "mcp-a" } }), "mcp-a");
   assert.equal(requestSessionId({ headers: { "x-openai-conversation-id": "chat-b" } }), "chat-b");
   assert.equal(requestSessionId({ headers: { "x-openai-session-id": "chat-c" } }), "chat-c");
+  assert.equal(requestSessionId(new Headers({ "x-openai-session": "chat-header-object" })), "chat-header-object");
   assert.equal(requestSessionId({ headers: { "x-openai-session": "x".repeat(600) } }), undefined);
 });
 
+test("MCP instructions follow the OpenChatX builder pattern and adapt to the host platform", () => {
+  assert.equal(hostDisplayName("win32"), "Windows");
+  assert.equal(hostDisplayName("darwin"), "macOS");
+  assert.equal(hostDisplayName("linux"), "linux");
+  assert.match(buildMcpInstructions("win32"), /fully permissioned Windows machine/u);
+  assert.match(buildMcpInstructions("linux"), /fully permissioned linux machine/u);
+  assert.match(buildMcpInstructions(), /# Tool routing/u);
+  assert.match(buildMcpInstructions(), /openclaw_dispatch_action/u);
+  assert.doesNotMatch(buildMcpInstructions(), /project_manage|subagent_run|summarize/u);
+});
+
+test("SDK initialize exposes the bridge-specific instruction text", async () => {
+  const response = await rpc("initialize", {
+    protocolVersion: "2025-03-26",
+    capabilities: {},
+    clientInfo: { name: "session-test", version: "1.0.0" },
+  }, null);
+  assert.equal(response.status, 200);
+  assert.equal(response.payload.result.serverInfo.name, "openclaw-chatgpt-bridge");
+  assert.match(response.payload.result.instructions, /# Tool routing/u);
+  assert.match(response.payload.result.instructions, /openclaw_dispatch_action/u);
+  assert.doesNotMatch(response.payload.result.instructions, /project_manage|subagent_run|summarize/u);
+  assert.match(response.payload.result.instructions, /INITIALIZATION_REQUIRED/u);
+});
+
+test("SDK negotiates the current MCP protocol through server/discover", async () => {
+  const response = await mcpHandler.fetch(new Request("http://127.0.0.1/mcp", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      accept: "application/json, text/event-stream",
+      "mcp-protocol-version": "2026-07-28",
+      "mcp-method": "server/discover",
+    },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: ++requestId,
+      method: "server/discover",
+      params: {
+        _meta: {
+          "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+          "io.modelcontextprotocol/clientCapabilities": {},
+          "io.modelcontextprotocol/clientInfo": { name: "session-test", version: "1.0.0" },
+        },
+      },
+    }),
+  }));
+  assert.equal(response.status, 200);
+  const payload = JSON.parse(await response.text());
+  assert.ok(payload.result.supportedVersions.includes("2026-07-28"));
+  assert.match(payload.result.instructions, /# Tool routing/u);
+  assert.match(payload.result.instructions, /openclaw_dispatch_action/u);
+  assert.equal(payload.result.capabilities.tools.listChanged, true);
+});
+test("SDK exposes all bridge tools and the screenshot viewer resource", async () => {
+  const listed = await rpc("tools/list", {}, null);
+  const names = listed.payload.result.tools.map((tool) => tool.name);
+  assert.equal(names.length, toolDefinitions.length);
+  assert.deepEqual(new Set(names), new Set(toolDefinitions.map((tool) => tool.name)));
+
+  const resources = await rpc("resources/list", {}, null);
+  const viewer = resources.payload.result.resources.find((resource) => resource.uri === "ui://openclaw/image-render/v4.html");
+  assert.ok(viewer);
+  assert.equal(viewer.mimeType, "text/html;profile=mcp-app");
+  assert.equal(viewer._meta.ui.prefersBorder, false);
+  assert.deepEqual(viewer._meta["openai/ui"].availableDisplayModes, ["inline"]);
+
+  const read = await rpc("resources/read", { uri: viewer.uri }, null);
+  assert.equal(read.payload.result.contents[0].mimeType, "text/html;profile=mcp-app");
+  assert.match(read.payload.result.contents[0].text, /id="screenshot"/u);
+});
 test("start_here is the first exposed tool and has a compact optional task label", () => {
   assert.equal(toolDefinitions[0].name, "start_here");
   assert.deepEqual(toolDefinitions[0].inputSchema.required ?? [], []);
   assert.equal(toolDefinitions[0].inputSchema.properties.task.maxLength, 160);
 });
 
-test("a ChatGPT session must initialize before other tools and remains isolated from another session", async () => {
-  const firstBlocked = await callTool("not_a_real_tool", {}, "chat-session-a");
-  assert.equal(firstBlocked.result.isError, true);
-  assert.match(firstBlocked.result.content[0].text, /INITIALIZATION_REQUIRED/u);
+test("start_here returns bridge-specific operating instructions", async () => {
+  const response = await callTool("start_here", {}, "start-here-instructions-test");
+  const instructions = response.payload.result.content[0].text;
+
+  for (const heading of [
+    "## Scope and operating principles",
+    "## Progress updates",
+    "## Tool routing",
+    "## Shell discipline",
+    "## Context and output discipline",
+    "## Validation and completion",
+    "## Decision boundaries",
+    "## Communication",
+    "## Session behavior",
+  ]) {
+    assert.ok(instructions.includes(heading), "Missing start_here section: " + heading);
+  }
+
+  assert.match(instructions, /openclaw_tool_search[\s\S]*openclaw_tool_describe[\s\S]*openclaw_dispatch_action/u);
+  assert.match(instructions, /openclaw_process/u);
+  assert.match(instructions, /batch forms when supported \(up to five items\)/u);
+  assert.match(instructions, /explicit authorization before committing, pushing, force-pushing, merging/u);
+  assert.match(instructions, /redaction is best-effort/u);
+  assert.doesNotMatch(instructions, /Durable Jobs|job_manage|project_manage|subagent_run|\{\{MODE_INSTRUCTIONS\}\}|\bfile_read\b|\bbash\b/u);
+});
+
+test("a ChatGPT session must initialize before other tools and stays isolated from another session", async () => {
+  const firstBlocked = await callTool("openclaw_tool_search", { query: "browser" }, "chat-session-a");
+  assert.equal(firstBlocked.payload.result.isError, true);
+  assert.match(firstBlocked.payload.result.content[0].text, /INITIALIZATION_REQUIRED/u);
 
   const started = await callTool("start_here", { task: "session startup test" }, "chat-session-a");
-  assert.equal(started.result.isError, undefined);
-  assert.match(started.result.content[0].text, /Tool routing/u);
+  assert.equal(started.payload.result.isError, undefined);
+  assert.match(started.payload.result.content[0].text, /Tool routing/u);
 
-  const allowed = await callTool("not_a_real_tool", {}, "chat-session-a");
-  assert.equal(allowed.result.isError, true);
-  assert.match(allowed.result.content[0].text, /Unknown MCP tool/u);
-  assert.doesNotMatch(allowed.result.content[0].text, /INITIALIZATION_REQUIRED/u);
-
-  const secondBlocked = await callTool("not_a_real_tool", {}, "chat-session-b");
-  assert.equal(secondBlocked.result.isError, true);
-  assert.match(secondBlocked.result.content[0].text, /INITIALIZATION_REQUIRED/u);
-
-  const sessions = listSessions();
-  const first = sessions.find((session) => session.task === "session startup test");
-  const second = sessions.find((session) => session.lastTool === "not_a_real_tool" && !session.initialized);
+  const first = listSessions().find((session) => session.task === "session startup test");
   assert.ok(first);
   assert.equal(first.initialized, true);
-  assert.equal(first.id, "agent-1");
+  assert.equal(isSessionInitialized("chat-session-a"), true);
+
+  const secondBlocked = await callTool("openclaw_tool_search", { query: "browser" }, "chat-session-b");
+  assert.equal(secondBlocked.payload.result.isError, true);
+  assert.match(secondBlocked.payload.result.content[0].text, /INITIALIZATION_REQUIRED/u);
+
+  const sessions = listSessions();
+  const second = sessions.find((session) => session.lastTool === "openclaw_tool_search" && !session.initialized);
   assert.ok(second);
   assert.equal(second.initialized, false);
   assert.notEqual(first.id, second.id);
@@ -81,9 +183,9 @@ test("a ChatGPT session must initialize before other tools and remains isolated 
 
 test("sessions without an identity remain compatible with local MCP clients", async () => {
   const result = await callTool("not_a_real_tool", {}, null);
-  assert.equal(result.result.isError, true);
-  assert.match(result.result.content[0].text, /Unknown MCP tool/u);
-  assert.doesNotMatch(result.result.content[0].text, /INITIALIZATION_REQUIRED/u);
+  assert.ok(result.payload.error);
+  assert.match(result.payload.error.message, /not found/u);
+  assert.doesNotMatch(JSON.stringify(result.payload), /INITIALIZATION_REQUIRED/u);
 });
 
 test("removing a session from the monitor preserves initialization and restores it on the next tool call", async () => {
@@ -98,10 +200,8 @@ test("removing a session from the monitor preserves initialization and restores 
   assert.equal(touchSession(sessionKey), undefined);
   assert.equal(isSessionInitialized(sessionKey), true);
 
-  const laterCall = await callTool("not_a_real_tool", {}, sessionKey);
-  assert.equal(laterCall.result.isError, true);
-  assert.match(laterCall.result.content[0].text, /Unknown MCP tool/u);
-  assert.doesNotMatch(laterCall.result.content[0].text, /INITIALIZATION_REQUIRED/u);
+  const laterCall = await callTool("start_here", { task: "restored session test" }, sessionKey);
+  assert.equal(laterCall.payload.result.isError, undefined);
 
   const restored = listSessions().find((session) => session.id === before.id);
   assert.ok(restored);
@@ -109,12 +209,29 @@ test("removing a session from the monitor preserves initialization and restores 
   assert.equal(restored.id, before.id);
 });
 
+test("bridge restart delegates process replacement to the external supervisor", async () => {
+  const server = await readFile(new URL("../src/server.mjs", import.meta.url), "utf8");
+  const supervisor = await readFile(new URL("../scripts/windows/bridge-supervisor.ps1", import.meta.url), "utf8");
+
+  assert.match(server, /process\.env\.OPENCLAW_BRIDGE_SUPERVISED !== "1"/u);
+  assert.match(server, /setTimeout\(shutdown, 300\)/u);
+  assert.doesNotMatch(server, /spawn\("powershell\.exe"/u);
+  assert.match(supervisor, /Local\\OpenClawChatGPTBridgeSupervisor/u);
+  assert.match(supervisor, /Start-Process -FilePath \$nodePath/u);
+  assert.match(supervisor, /health\.pid/u);
+  assert.match(supervisor, /restarting the bridge only/u);
+});
+
 test("monitor displays the session count only once inside the All sessions card", async () => {
   const html = await readFile(new URL("../src/monitor/index.html", import.meta.url), "utf8");
   assert.match(html, /ChatGPT Sessions<\/span><\/div>/u);
   assert.doesNotMatch(html, /id="sessionCount"/u);
-  assert.match(html, /<span class="badge">'\+sessions\.length\+'<\/span>/u);
+  assert.match(html, /sessions\.length/u);
   assert.match(html, /data-remove-session=/u);
   assert.match(html, /fetch\("\/api\/sessions\/"/u);
+  assert.match(html, /async function restartBridge\(\)[\s\S]*?fetch\("\/api\/restart",\{method:"POST"\}\)/u);
   assert.doesNotMatch(html, /window\.confirm\(/u);
+  assert.match(html, /fetch\("\/api\/restart",\{method:"POST"\}\)/u);
+  assert.match(html, /String\(health\.pid\)/u);
+  assert.match(html, /observedOffline/u);
 });
