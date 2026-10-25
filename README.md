@@ -5,141 +5,212 @@
 [![Protocol: MCP](https://img.shields.io/badge/Protocol-MCP-5B5BD6)](https://modelcontextprotocol.io/)
 [![Built for ChatGPT](https://img.shields.io/badge/Built%20for-ChatGPT-74AA9C?logo=openai&logoColor=white)](https://chatgpt.com/)
 
-A Model Context Protocol (MCP) bridge that exposes OpenClaw browser, desktop, and file tools directly to ChatGPT through the OpenAI Secure MCP Tunnel, plus bridge-native screenshot rendering, local project search, and dynamic native-tool discovery. It exposes 16 public MCP tools: browser and computer control, five file-operation tools, image rendering, glob/grep search, exec/process, and the discovery trio (`openclaw_tool_search`, `openclaw_tool_describe`, and `openclaw_dispatch_action`) without routing routine actions through the OpenClaw main agent.
+A local Model Context Protocol (MCP) bridge that gives ChatGPT direct access to selected OpenClaw capabilities and bridge-native utilities. Its current public surface contains 16 MCP tools covering browser and desktop interaction, file operations, project search, command/process management, screenshot rendering, session instructions, and dynamic discovery of eligible native OpenClaw tools.
 
-The repository also includes Windows lifecycle scripts and a local call monitor for inspecting tool arguments, results, timing, and errors.
+The bridge calls the relevant native tool directly instead of routing routine operations through the OpenClaw main agent. OpenClaw remains authoritative for native schemas, permissions, approvals, browser attachment, and runtime validation.
 
-> **Direct invocation, native authority.** The bridge forwards Browser requests and preserves OpenClaw runtime errors. It does not bypass OpenClaw permissions, extension attachment, profile availability, or runtime validation.
+![Local call monitor overview showing active sessions, tool-call history, and invocation details](docs/images/monitor-overview.png)
 
----
+## Capabilities
 
-## 1. Project Overview
+| Area | Public tools | What they provide |
+|---|---|---|
+| Session setup | `start_here` | Must be called once before other bridge tools in each ChatGPT conversation; loads tool-routing and safety instructions. |
+| Browser automation | `openclaw_browser` | Chrome status and lifecycle, tabs, navigation, snapshots, screenshots, page interaction, text, console/network diagnostics, downloads, uploads, dialogs, PDF, and supported emulation. |
+| Desktop automation | `openclaw_computer` | Windows screen snapshots, mouse and keyboard input, window/app operations, accessibility queries, and bounded action batches. |
+| File operations | `openclaw_ls`, `openclaw_read`, `openclaw_edit`, `openclaw_write`, `openclaw_apply_patch` | List, read, edit, create/replace, and patch files through OpenClaw's native file tools. Listing and reading support batches. |
+| Local project search | `openclaw_glob`, `openclaw_grep` | Discover paths and search file contents using Node.js glob and ripgrep, without a shell for the search itself. |
+| Runtime operations | `openclaw_exec`, `openclaw_process` | Run commands and inspect or control processes started through the runtime wrapper. |
+| Screenshot presentation | `openclaw_image_render` | Display a recent desktop screenshot in the ChatGPT UI using a short-lived reference. |
+| Native tool discovery | `openclaw_tool_search`, `openclaw_tool_describe`, `openclaw_dispatch_action` | Find eligible tools in the current OpenClaw runtime, inspect their actual schemas, and invoke tools that do not already have a direct bridge wrapper. |
 
-This project provides a small integration layer between ChatGPT and a local OpenClaw installation. The bridge is built on Node.js, with platform-specific lifecycle scripts kept separate so support for additional operating systems can be added without changing the public MCP tool surface. Windows is the currently documented and supported setup. The intent is to keep the public MCP surface explicit and easy to troubleshoot while allowing each native tool to be added independently.
+This catalog describes the bridge's public interface, not a guarantee that every native OpenClaw capability is available in every installation. Runtime version, installed plugins, node hardware, pairing approvals, Gateway policy, and operating-system permissions all affect availability.
 
-The bridge exposes sixteen public MCP tools. Browser, Computer, and Files wrap their supported OpenClaw runtime tools; `openclaw_image_render`, `openclaw_glob`, and `openclaw_grep` are bridge-native capabilities; `openclaw_exec` and `openclaw_process` wrap OpenClaw's native runtime tools. The discovery trio searches the live effective tool catalog, returns exact schemas built by the installed runtime, and dispatches eligible unwrapped tools through the Gateway. It intentionally omits native tools already covered by bridge wrappers.
+## Architecture
 
-### Core capabilities
-
-- **Native Browser access** — forward Browser actions to OpenClaw Gateway's `/tools/invoke` endpoint.
-- **Desktop computer control** — invoke `computer.act` and `screen.snapshot` on the paired OpenClaw Windows computer node.
-- **Schema-led tool discovery** — expose supported browser, desktop, and file-operation contracts to the MCP client.
-- **Local project search** — `openclaw_glob` uses Node.js's built-in `fs/promises.glob()`; `openclaw_grep` invokes ripgrep (`rg`) directly with structured JSON output and reports matching lines and line numbers. Ripgrep respects standard ignore files such as `.gitignore`.
-- **Live call monitor** — inspect running, successful, and failed calls, including arguments, output, duration, and available diagnostics.
-- **Lifecycle management** — configure, start, inspect, and stop bridge-related processes through npm commands backed by platform-specific scripts.
-- **Runtime diagnostics** — retain native tool errors and attach relevant Gateway log context when invocation fails.
-- **Local configuration isolation** — keep generated configuration, tunnel profiles, API-key material, and logs outside the Git repository.
-
----
-
-## 2. Architecture
+The bridge provides the MCP endpoint, routes calls to feature-specific handlers, and hosts a local call monitor. Depending on the capability, a handler uses an OpenClaw native tool, invokes a Gateway tool, or performs bridge-owned work.
 
 ```text
 ChatGPT custom MCP connector
           |
 OpenAI Secure MCP Tunnel
           |
-Local Node.js MCP bridge
-          |                      |
-          |                      +--> Local call monitor
-          |                           /monitor · /api/events · /events
-          |
-OpenClaw Gateway /tools/invoke
-          |
-Native OpenClaw Browser tool
-          |
-Installed browser profile / extension
+Local Node.js bridge
+  ├── MCP endpoint (/mcp)
+  │     └── Public tool registry and dispatcher
+  │           ├── Browser wrapper ──────────> OpenClaw Gateway ──> Browser / Chrome extension
+  │           ├── Desktop wrapper ──────────> OpenClaw Gateway / paired computer node
+  │           ├── Files and runtime wrappers > OpenClaw native tools
+  │           ├── Tool Discovery ───────────> Effective tool catalog / Gateway invocation
+  │           └── Bridge-native utilities ──> glob, grep, screenshot rendering, session setup
+  └── Local call monitor (/monitor)
+        └── In-memory events and Server-Sent Events (/events)
 ```
 
-The bridge serves MCP requests at `/mcp`, a health endpoint at `/healthz`, and the local monitor at `/monitor`. Tool-call events are streamed to the monitor over Server-Sent Events (SSE). Browser calls go through the Gateway HTTP tool-invocation endpoint; desktop calls go through the paired node command interface.
+Tool definitions are assembled in `src/mcp/tool-definitions.mjs`; `src/mcp/tool-dispatcher.mjs` routes public tool names to handlers. The local HTTP server exposes `/mcp` and `/healthz` as well as the monitor endpoints. Tool-call events are streamed to the monitor over Server-Sent Events (SSE).
 
-The monitor includes searchable tool-call history, collapsible JSON trees with raw-text and deeper-expansion controls, per-session and per-tool-call JSON copy actions, and side-by-side or line-by-line rendering for unified diffs. It uses a fixed dark theme. `json-formatter-js` and `diff2html` assets are served locally from pinned npm dependencies; the monitor does not load these libraries from a CDN.
+### Integration boundaries
 
-The Browser feature lives under `src/tools/browser/`. Its schema describes the MCP-facing contract, while its handler supplies the documented default profile and applies a **10-second default timeout** to `action: "open"` when the caller does not specify `timeoutMs`. Browser-specific payload validation remains the responsibility of the native OpenClaw runtime. If an open operation times out, the bridge checks the current tab list once; it reports success only if the requested URL is observed, and never retries the open automatically.
+- **OpenClaw wrappers:** Browser, Computer, Files, and runtime execution/process tools use OpenClaw's native behavior for the operation they wrap. The bridge may shape the public schema, prepare arguments, maintain interaction state, or format results, but it does not bypass OpenClaw policy.
+- **Bridge-native utilities:** `openclaw_glob` and `openclaw_grep` search local files; `openclaw_image_render` presents a screenshot captured by the computer tool; `start_here` supplies conversation-specific routing instructions.
+- **Dynamic tool discovery:** the discovery trio searches tools effectively available to the configured OpenClaw agent, returns runtime-provided schemas, and dispatches the exact selected tool through the supported Gateway invocation path. Tools already covered by direct wrappers are intentionally excluded so their bridge-specific behavior is retained.
 
----
+For implementation guidance, see [Tool Exposure Guide](docs/TOOL_EXPOSURE_GUIDE.md). For node command policy and discovery of capabilities such as camera, location, screen, device information, notifications, and plugin-provided actions, see [Gateway Node Command Reference](docs/GATEWAY_NODE_COMMAND_REFERENCE.md).
 
-## 3. Browser Tool Behavior
+## Setup and operation
 
-The exposed tool is named `openclaw_browser`. It forwards native Browser actions through Gateway and returns runtime results or errors to the caller.
+### Requirements
 
-- Profile-dependent browser actions are pinned internally to **`profile: "chrome"`**. The public schema omits `profile`, `browser`, and `systemProfile` selectors, and the backend strips them if supplied anyway, so callers cannot switch to another browser profile.
-- If `action: "open"` is requested while Chrome is fully closed, the bridge launches Chrome using the last-used profile from the existing local Chrome User Data directory, then forwards the request. This preserves the user's normal profile and its existing sign-in state; it does not create a separate OpenClaw profile. The OpenClaw extension must already be installed in that Chrome profile and be able to connect.
-- Automatic launch applies only to `action: "open"`. Other actions do not start Chrome automatically. If Chrome is already running, the bridge leaves it running and does not spawn another instance.
-- For page interaction, take a snapshot first and use element refs from that snapshot where appropriate.
-- For `action: "act"`, supply the native `kind` and the relevant operation fields. For example, `fill` uses `fields`, while `press` uses `key`.
-- URL schemes, action support, browser availability, and permissions remain controlled by OpenClaw and the browser runtime.
+- Windows and PowerShell for the currently supported lifecycle scripts.
+- Node.js **22.17 or later** and npm.
+- `rg.exe` (ripgrep) on `PATH`, or set `OPENCLAW_RIPGREP_PATH` to its executable path.
+- An installed and configured OpenClaw runtime and Gateway.
+- An OpenAI Secure MCP Tunnel created in Platform and an **OpenAI Platform API key for `tunnel-client`** with Tunnels Read + Use permission. You also need permission to add a custom MCP server in the target ChatGPT workspace.
 
-The bridge removes caller-supplied profile selectors, pins profile-dependent actions to `chrome`, and supplies the default timeout for `action: "open"`. Other supported action arguments are forwarded without silent rewriting. It does not claim that an operation succeeded when the native runtime reports an error.
+### Prepare the OpenAI tunnel
 
-## 4. Desktop Computer Tool
+1. Open [OpenAI Platform Tunnels settings](https://platform.openai.com/settings/organization/tunnels) and create a Secure MCP Tunnel. Note its `tunnel_id` and associate the tunnel with the ChatGPT workspace where the connector will be created. A tunnel attached only to a Platform organization may not appear in a separate ChatGPT workspace.
+2. Create or select an **OpenAI Platform API key** for the tunnel client. This key authenticates `tunnel-client` to OpenAI's tunnel control plane; it is required even though the MCP bridge itself runs locally. Grant it **Tunnels Read + Use** so it can run the tunnel and select it for the ChatGPT connection. Creating or editing the tunnel requires **Tunnels Read + Manage** for the account performing that operation.
+3. The API key for `tunnel-client` is separate from your ChatGPT sign-in and from the authentication setting on the ChatGPT custom MCP plugin. The setup wizard prompts for the key using hidden input and stores it in a user-restricted local file. Do not paste it into ChatGPT, put it in the repository, or commit it to Git.
 
-The exposed tool is named `openclaw_computer`. Use `action: "snapshot"` to capture the current screen, then use `left_click`, `type`, `key`, `scroll`, `list_windows`, or accessibility actions as needed. The snapshot returns an `executionId` and `displayFrameId`; the bridge keeps that OpenClaw execution alive across MCP calls and reuses it for subsequent actions on the active desktop session. Pass the latest `displayFrameId` with coordinate-based actions and take a fresh snapshot after the screen changes. Use `action: "batch"` with an ordered `actions` array to execute up to 5 desktop actions sequentially in one MCP request. The LLM should batch only steps predictable from the latest observation and use a shorter batch when the next step depends on inspecting a changed screen; the five-step cap is a maximum, not a target. The bridge still invokes each native action separately, so batch reduces LLM/MCP round-trips but does not remove per-action Gateway latency. By default, a batch stops on the first error; set `stopOnError: false` to continue and receive per-action results. Nested batches and `close_execution` inside a batch are unsupported; if a batch includes `snapshot`, it must be the final action. Call `action: "close_execution"` when the interaction is complete; if the caller does not close it, the bridge closes an idle execution after five minutes. The handler routes screenshots to `screen.snapshot` and desktop actions to `computer.act`, filters arguments to the native fields supported by each action, and serializes desktop operations to prevent overlapping input sequences. The paired node configured by `OPENCLAW_COMPUTER_NODE` (default: `OpenClaw Windows CUA`) must be connected and approved. This tool controls desktop UI; use `openclaw_browser` for browser-tab and DOM-level interactions.
+See the official [Secure MCP Tunnel guide](https://developers.openai.com/api/docs/guides/secure-mcp-tunnels) for organization/workspace associations and permissions.
 
-### Optional screenshot rendering in ChatGPT
+### Configure the bridge
 
-A successful `openclaw_computer` call with `action: "snapshot"` preserves the image content for model vision and adds a short `screenshot_ref`. The bridge stores a copy in memory for up to five minutes (maximum 12 cached screenshots). Call `openclaw_image_render` with that reference only when the screenshot should be shown in the chat UI. The render tool attaches the registered `ui://openclaw/image-render/v4.html` MCP App and sends the image bytes as tool-result `_meta`, rather than asking the model to copy a long Base64 string. References expire on timeout, cache eviction, or bridge restart. Hosts that do not support MCP Apps may show only the text fallback.
+From the repository root, run the setup wizard in PowerShell:
 
----
+```powershell
+npm run setup
+```
 
-## 5. Local Call Monitor
+Follow the prompts for the OpenClaw config and CLI paths, Node.js, bridge and Gateway ports, the `tunnel_id`, and runtime API-key material. Setup installs the locked npm dependencies, locates or downloads the official `tunnel-client`, creates a profile that forwards the tunnel to the bridge's local `/mcp` endpoint, validates the configuration, and stores generated settings outside the repository.
 
-Open the local monitor at:
+The default local application directory is:
 
 ```text
-http://127.0.0.1:19002/monitor
+%LOCALAPPDATA%\OpenClawChatGPTBridge\
 ```
 
-The port can differ if changed during setup.
+It contains the generated configuration, user-restricted API-key file, tunnel profile, and runtime logs. Keep these files out of version control.
 
-The monitor provides:
+### Start, inspect, and stop
 
-- **Live call status** — running, completed, and failed calls.
-- **Call details** — operation, arguments, output, elapsed time, and diagnostics when available.
-- **Filtering** — view calls by status.
-- **Copy session / tool call** — copy a session with its retained events, or copy an individual call, as JSON.
-- **Clear monitor** — clear the in-memory event history and hide all current sessions from the monitor.
-- **Remove session** — remove that session and its retained tool-call logs; the MCP session's initialization state remains intact and it reappears if used again.
-- **Bounded retention** — keep at most the 200 newest events in memory.
+```powershell
+npm start
+npm run status
+npm stop
+```
 
-The monitor is intended for local development and troubleshooting. Redaction is best-effort, so do not pass secrets in tool arguments.
+The Windows scripts manage the bridge, tunnel client, and Gateway startup as configured. The stop script only stops a Gateway process when the project launcher started it and the recorded PID still matches the expected command; it leaves a pre-existing Gateway process running.
 
----
+The bridge normally listens on `http://127.0.0.1:19002` and the Gateway on port `19001`; configured values may differ. Open the local call monitor at `http://127.0.0.1:19002/monitor`. Keep the tunnel client running while ChatGPT discovers or calls tools; use `npm run status` to inspect the local stack.
 
-## 5. Repository Structure
+### Add the bridge in ChatGPT
+
+1. In ChatGPT on the web, open **Plugins**, select **+**, then choose **Add custom MCP server**.
+2. Enter a name and optional description. Under **Connection**, choose **Tunnel**, then select the same Secure MCP Tunnel created earlier (or enter its `tunnel_id` if prompted). Do not paste the local `http://127.0.0.1:19002/mcp` address into **Server URL** when using the tunnel connection.
+3. Configure authentication if the connection form requires it, review the risk warning, acknowledge it, and choose **Create as a plugin**.
+4. Review the discovered tool list and metadata. Install the resulting plugin, start a new conversation, type `@`, select the plugin, and test a low-risk operation.
+
+Adding the plugin is separate from running the local bridge and tunnel client. If the tunnel is not listed, verify that it is associated with the target ChatGPT workspace and that your Platform account has Tunnels Read + Use. Custom MCP server connections and full MCP support are currently documented for ChatGPT Business and Enterprise/Edu on the web; workspace permissions also apply. Check the current [ChatGPT custom MCP server requirements](https://help.openai.com/en/articles/12584461-connecting-custom-mcp-servers-in-chatgpt) before setup. See [Add a custom MCP server to ChatGPT](https://developers.openai.com/api/docs/guides/custom-mcp-server) for the connection flow.
+
+For Windows sign-in startup, `scripts/windows/start-on-logon.ps1` is the scheduled-task entry point. `scripts/windows/bridge-supervisor.ps1` supervises bridge restarts. `scripts/windows/start-monitor.ps1` is retained as a compatibility alias for the combined launcher.
+
+## Tool behavior and boundaries
+
+### Browser
+
+`openclaw_browser` forwards supported Browser actions through the Gateway. Profile-dependent actions are pinned internally to `profile: "chrome"`; the public schema does not expose profile selectors. When Chrome is fully closed, `action: "open"` can launch it using the existing local Chrome User Data directory and its last-used profile. The OpenClaw extension must already be installed in that profile and able to connect. Other actions do not launch Chrome automatically, and an already-running Chrome instance is left running.
+
+Example: the Browser tool opened this public repository, navigated into `src/`, and opened `server.mjs` for inspection.
+
+![Browser automation navigating the repository and opening a source file on GitHub](docs/images/browser-repository-navigation.png)
+
+For page interaction, take a fresh snapshot and use its element references where appropriate. The `action: "act"` batch mode combines predictable steps into one native `/act` request; `open`, `navigate`, `snapshot`, and `screenshot` remain separate calls. Page-changing actions can invalidate references, so observe the page again before dependent actions. A batch stops on the first failed step by default; `stopOnError: false` continues. If the runtime rejects a batch, execute the steps individually.
+
+The bridge supplies a 10-second default timeout for `action: "open"` when none is provided. If an open operation times out, it checks the current tab list once and reports success only if the requested URL is observed; it does not retry automatically. URL schemes, action support, browser availability, extension attachment, and permissions remain controlled by OpenClaw and the browser runtime.
+
+OpenClaw's browser SSRF policy also applies to local URLs. If `browser.ssrfPolicy.allowedHostnames` is explicitly configured, `localhost` and `127.0.0.1` must be listed separately when both forms are needed. For this monitor, retain both entries if using both URL forms:
+
+```json5
+{
+  browser: {
+    ssrfPolicy: {
+      allowedHostnames: ["localhost", "127.0.0.1"]
+    }
+  }
+}
+```
+
+This is OpenClaw configuration, not a bridge setting. Add only trusted, specific hostnames. Do not enable `dangerouslyAllowPrivateNetwork` just to fix a loopback URL. See the [OpenClaw browser configuration](https://docs.openclaw.ai/tools/browser/configuration) and [browser security guidance](https://docs.openclaw.ai/gateway/security/browser-control).
+
+### Desktop
+
+`openclaw_computer` controls desktop UI through the configured paired computer node; it does not interact with the browser DOM. Take a `snapshot` first, reuse its `executionId`, and pass its latest `displayFrameId` for coordinate-based actions. Capture a fresh snapshot after screen/layout changes. Batch mode supports up to five predictable actions. It reduces MCP round-trips, but each native desktop action still incurs its own Gateway call. Call `action: "close_execution"` when finished; idle executions are closed automatically after five minutes.
+
+A successful snapshot also registers a short-lived screenshot reference. Call `openclaw_image_render` with its `screenshot_ref` to display it in ChatGPT. The bridge keeps at most 12 screenshots in memory for up to five minutes; references expire on timeout, cache eviction, or bridge restart. Clients that do not support MCP Apps may show only the text fallback.
+
+### Files and local search
+
+The five file tools wrap OpenClaw's native `ls`, `read`, `edit`, `write`, and `apply_patch` tools. `openclaw_edit` is for targeted text replacements; `openclaw_write` intentionally replaces an entire file; `openclaw_apply_patch` uses OpenClaw's patch format. `openclaw_ls` and `openclaw_read` support batches of one to five paths. Read the current file before editing it and inspect the result afterward.
+
+**Path scope:** for this bridge instance, the five file tools disable OpenClaw's required-workspace-only guard. They can use absolute paths on drives accessible to the current Windows account, subject to normal filesystem permissions. `OPENCLAW_WORKSPACE_DIR` sets the base for relative paths; the Windows launcher sets it to the configured OpenClaw state directory's `workspace` folder. This wider path scope applies only to the five bridge file tools. It does not widen Browser/Computer permissions or grant additional `openclaw_exec` access. Treat writes and patches as consequential and use trusted paths.
+
+`openclaw_glob` uses Node.js's built-in `fs/promises.glob()` API and returns up to 100 paths; it excludes `.git` and `node_modules` directories. `openclaw_grep` calls ripgrep directly and returns up to 100 matching lines with file paths and line numbers. Ripgrep respects its normal ignore rules, including `.gitignore`, and the bridge explicitly excludes `.git` and `node_modules`. Search is case-sensitive for `openclaw_grep`.
+
+### Runtime commands and processes
+
+`openclaw_exec` wraps OpenClaw's native `exec` tool for tasks such as builds, tests, Git, package managers, and other command-line work. `openclaw_process` inspects or controls processes started through that wrapper, including polling output, sending input, and managing a process session. Use the process tool when an execution returns a running session. Runtime behavior and access remain subject to the configured OpenClaw host and its policies.
+
+### Dynamic native-tool discovery
+
+Use the discovery tools when a capability is not already covered by a direct bridge wrapper:
+
+1. Call `openclaw_tool_search` with capability keywords. Results come from tools available in the current runtime and may include eligible core, plugin, MCP, or channel tools.
+2. Call `openclaw_tool_describe` with the exact returned tool ID to inspect the runtime schema.
+3. Call `openclaw_dispatch_action` with that exact ID and arguments matching the schema.
+
+The bridge refreshes effective tool availability before dispatch. OpenClaw remains responsible for its policy, approvals, hooks, argument validation, and invocation restrictions. Prefer a dedicated bridge wrapper where one exists. Tool discovery does not automatically enable every node or plugin capability.
+
+## Local call monitor
+
+The monitor is intended for local development and troubleshooting. It shows running, completed, and failed calls; arguments and output; duration; and diagnostics when available. It supports status filtering, copying a session or individual call as JSON, clearing in-memory history, and removing retained sessions. It retains at most the 200 newest events in memory.
+
+Open it at `http://127.0.0.1:19002/monitor` (the port may differ if reconfigured). The server also provides `/healthz`, `/api/events`, `/api/sessions`, `/api/events/export`, and the `/events` SSE stream. Keep the monitor and bridge local; do not expose them to untrusted networks. Call arguments and results can contain private data, and redaction is best-effort.
+
+When a tool returns a change diff, the monitor can render additions and removals side by side to make edits easier to review.
+
+![Side-by-side diff rendering in the local call monitor](docs/images/monitor-diff-view.png)
+
+## Repository structure
 
 ```text
 chatgpt-openclaw-direct-tools/
 ├── src/
 │   ├── config/
-│   │   └── runtime.mjs            # Runtime paths and Gateway configuration
+│   │   └── runtime.mjs
 │   ├── mcp/
-│   │   ├── format.mjs             # MCP result formatting
-│   │   ├── instructions.mjs       # MCP and session-start instructions
-│   │   ├── sdk-server.mjs         # MCP SDK server and tool registration
-│   │   ├── session-registry.mjs   # Conversation-scoped session state
-│   │   ├── tool-definitions.mjs   # Public tool schemas
-│   │   └── tool-dispatcher.mjs    # Public tool routing
+│   │   ├── format.mjs
+│   │   ├── instructions.mjs
+│   │   ├── sdk-server.mjs
+│   │   ├── session-registry.mjs
+│   │   ├── tool-definitions.mjs
+│   │   └── tool-dispatcher.mjs
 │   ├── monitor/
-│   │   ├── events.mjs             # In-memory event stream
-│   │   └── index.html             # Local monitor UI
+│   │   ├── assets/
+│   │   ├── events.mjs
+│   │   └── index.html
 │   ├── tools/
-│   │   ├── browser/               # Browser invocation, recovery, and schema
-│   │   ├── computer/              # Windows desktop control
-│   │   ├── files/                 # Native OpenClaw file-tool wrappers
-│   │   ├── image-render/          # Optional screenshot viewer
-│   │   ├── file-search/           # Local glob and regex content search
-│   │   ├── runtime/               # Native exec and process wrappers
-│   │   └── tool-discovery/         # Search, describe, and dispatch unwrapped native tools
-│   ├── openclaw-client.mjs        # Gateway and node invocation helpers
-│   └── server.mjs                 # Local HTTP and MCP server
-├── tests/
-│   ├── browser-recovery.test.mjs
-│   ├── browser-schema.test.mjs
-│   ├── computer-tool.test.mjs
-│   ├── relay-input-epoch.test.mjs
-│   ├── check-syntax.ps1
-│   └── smoke.ps1
+│   │   ├── start-here/
+│   │   ├── browser/
+│   │   ├── computer/
+│   │   ├── files/
+│   │   ├── file-search/
+│   │   ├── image-render/
+│   │   ├── runtime/
+│   │   └── tool-discovery/
+│   ├── openclaw-client.mjs
+│   └── server.mjs
 ├── scripts/
 │   └── windows/
 │       ├── setup.ps1
@@ -149,78 +220,33 @@ chatgpt-openclaw-direct-tools/
 │       ├── start-on-logon.ps1
 │       ├── start-monitor.ps1
 │       └── bridge-supervisor.ps1
+├── tests/
+│   ├── browser-recovery.test.mjs
+│   ├── browser-schema.test.mjs
+│   ├── chrome-launch.test.mjs
+│   ├── computer-tool.test.mjs
+│   ├── file-search-tool.test.mjs
+│   ├── files-tool.test.mjs
+│   ├── image-render.test.mjs
+│   ├── mcp-session.test.mjs
+│   ├── monitor-events.test.mjs
+│   ├── monitor-redaction.test.mjs
+│   ├── relay-input-epoch.test.mjs
+│   ├── runtime-tools.test.mjs
+│   ├── tool-annotations.test.mjs
+│   ├── tool-discovery.test.mjs
+│   ├── check-syntax.ps1
+│   └── smoke.ps1
 ├── docs/
+│   ├── GATEWAY_NODE_COMMAND_REFERENCE.md
 │   └── TOOL_EXPOSURE_GUIDE.md
 ├── package.json
 └── README.md
 ```
 
-Public schemas are registered in `src/mcp/tool-definitions.mjs`; their handlers are registered in `src/mcp/tool-dispatcher.mjs`. Each native tool lives under `src/tools/<tool>/` and includes only the modules its implementation needs.
+The public MCP schemas are assembled in `src/mcp/tool-definitions.mjs`; handlers are routed through `src/mcp/tool-dispatcher.mjs`. Each feature family lives under `src/tools/<feature>/`. `docs/TOOL_EXPOSURE_GUIDE.md` describes how to add, change, validate, and remove public tools.
 
----
-
-## 6. Requirements and Setup
-
-### Requirements
-
-- Windows and PowerShell for the currently supported lifecycle scripts.
-- Node.js **22.17 or later** (`fs/promises.glob()` is stable in this release line).
-- npm (used by setup to install the locked Model Context Protocol SDK dependencies).
-- ripgrep (`rg.exe`) available on `PATH`. You can set `OPENCLAW_RIPGREP_PATH` to an executable path when it is not on `PATH`.
-- An installed and configured OpenClaw runtime and Gateway.
-- An OpenAI Secure MCP Tunnel configuration for the ChatGPT custom MCP connector.
-
-### Configure the bridge
-
-From PowerShell, run the setup wizard in the repository root:
-
-```powershell
-npm run setup
-```
-
-Follow the prompts to configure the OpenClaw paths, bridge and Gateway ports, tunnel settings, and required API-key material. The setup script installs the locked MCP SDK dependencies with `npm ci`, validates the local runtime configuration, and saves generated settings outside the repository.
-
-The default local application directory is:
-
-```text
-%LOCALAPPDATA%\OpenClawChatGPTBridge\
-```
-
-It contains the generated configuration, restricted API-key file, tunnel profile, and runtime logs. These files should remain local and must not be committed.
-
----
-
-## 7. Run and Operate
-
-Start the bridge, Gateway when needed, and tunnel client:
-
-```powershell
-npm start
-```
-
-Check the configured processes and endpoints:
-
-```powershell
-npm run status
-```
-
-Stop the processes managed by the project scripts:
-
-```powershell
-npm stop
-```
-
-The stop script only stops a Gateway process when the launcher started it and the recorded PID still matches the expected command. A pre-existing Gateway process is left running.
-
-For Windows sign-in startup, configure the scheduled task to call `scripts/windows/start-on-logon.ps1`. This wrapper records startup attempts and retries once after a failure. The `scripts/windows/start-monitor.ps1` script is retained as a compatibility alias for the combined launcher.
-
-The bridge runs as a child owned by `scripts/windows/bridge-supervisor.ps1`. Monitor restart exits that child; the supervisor starts a replacement and verifies `/healthz` against the new PID. The supervisor does not manage the OpenClaw Gateway or Secure MCP Tunnel. `scripts/windows/stop.ps1` signals the supervisor to stop before shutting down the rest of the stack.
-
-After startup, configure the ChatGPT custom MCP connector to use the matching Secure MCP Tunnel. Start a fresh conversation, enable the connector's tool, and begin with a low-risk request such as checking Browser status or listing tabs.
-
----
-
-## 8. Validation
+## Validation
 
 Run static checks and unit tests:
 
@@ -229,31 +255,27 @@ npm run check
 npm run test:unit
 ```
 
-Run the live smoke suite against a running local bridge:
+For an integration smoke test against a running local bridge and Gateway:
 
 ```powershell
 npm test -- -BaseUrl http://127.0.0.1:19002
 ```
 
-The static check validates JavaScript and PowerShell syntax and checks selected architecture and lifecycle contracts. Unit tests cover MCP SDK initialization/session behavior, the Browser MCP schema, and browser relay input-access regressions. The smoke suite exercises live bridge/Gateway behavior; it requires a working local runtime and may depend on the installed OpenClaw configuration.
+Static checks cover JavaScript and PowerShell syntax plus selected architecture/lifecycle contracts. Unit tests cover tool schemas and handlers, session behavior, monitor behavior, runtime wrappers, file tools, and discovery. Smoke tests depend on the local OpenClaw configuration and runtime state; passing unit tests does not establish that every native action works for every profile or node.
 
-A passing local test suite does not establish that every Browser action will work in every profile or runtime state.
+## Security and operational boundaries
 
----
+- **Keep endpoints local.** The bridge and monitor default to loopback. Do not expose them to an untrusted network.
+- **Keep secrets out of Git.** API keys, generated runtime configuration, tunnel profiles, logs, and process state belong outside the repository.
+- **Treat monitor output as sensitive.** Tool arguments and results may contain private page or machine data, even with best-effort redaction.
+- **Respect native permissions.** Direct invocation is not a permission bypass. OpenClaw policy, tool availability, node pairing/approval, browser attachment, and OS permissions remain authoritative.
+- **Use incremental tool exposure.** Inspect live schemas before invoking discovered tools. Preserve native errors instead of manufacturing success, and obtain approval before destructive or externally consequential actions unless clearly authorized.
 
-## 9. Security and Operational Boundaries
+## Related projects and approaches
 
-- **Keep the bridge local.** It defaults to loopback; do not expose the bridge or monitor endpoints to an untrusted network.
-- **Never commit secrets.** API keys, Gateway configuration, tunnel profiles, logs, and process PID files belong outside version control.
-- **Treat monitor output as sensitive.** Arguments and results may contain page content or other private data even when best-effort redaction is applied.
-- **Respect native permissions.** Direct MCP invocation is not a permission bypass. OpenClaw policy, browser profile state, extension attachment, and connector permissions still apply.
-- **Use explicit, incremental tool exposure.** Inspect each native tool's real contract before publishing its schema; preserve the runtime's errors rather than adding bridge-side guesses.
+These projects overlap with this bridge's ecosystem, but they are not dependencies of this repository. The links are included to clarify neighboring approaches, not to imply that the implementations are interchangeable.
 
----
-
-## 10. Related Projects
-
-- [OpenClaw MCP Relay](https://docs.openclaw.ai/plugins/mcp-relay)
-- [chatgpt-web-agent](https://github.com/AxelHu/chatgpt-web-agent)
-- [ClawConnect](https://github.com/lambda-curry/clawconnect)
-- [openchatx-mcp](https://github.com/XiaoPuOuO/openchatx-mcp)
+- **[OpenClaw MCP Relay](https://docs.openclaw.ai/plugins/mcp-relay)** — OpenClaw's bundled relay for connecting ChatGPT, Codex, and Claude to a Gateway, including its Control UI and authorized conversation operations. It is the official Gateway-level integration path; this repository instead exposes a separately defined MCP tool surface through OpenAI Secure MCP Tunnel and direct bridge handlers.
+- **[chatgpt-web-agent](https://github.com/AxelHu/chatgpt-web-agent)** — The closest technical neighbor: a local MCP layer using OpenAI Secure MCP Tunnel and OpenClaw-backed tools. Its public surface and architecture differ, including a separate persistent execution runtime and optional Skills, Google Drive, and Feishu integrations; this repository focuses on direct Browser/Computer/Files/runtime wrappers plus bridge-native search, screenshot rendering, and dynamic tool discovery.
+- **[OpenChatX](https://github.com/XiaoPuOuO/openchatx-mcp)** — A broader local agent runtime exposed through one ChatGPT MCP connection, combining computer control, local tools, MCP aggregation, Skills, Rules, Projects, Tasks, and other runtime features. It is an adjacent platform/alternative, not a library this bridge depends on.
+- **[ClawConnect](https://github.com/lambda-curry/clawconnect)** — A task-oriented MCP server and CLI for submitting work to OpenClaw agents and tracking task/session state across clients. It addresses a neighboring integration problem, but its high-level task contract differs from this bridge's focus on exposing individual native tool operations directly.
