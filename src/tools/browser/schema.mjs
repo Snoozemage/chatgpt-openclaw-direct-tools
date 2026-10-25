@@ -23,8 +23,8 @@ const stringArray = (description) => ({
 const actProperties = {
   targetId: string("Browser target ID returned by tabs or snapshot."),
   tabId: string("Tab ID returned by tabs or snapshot."),
-  ref: string("Element ref returned by the latest snapshot."),
-  selector: string("CSS selector for selector-based actions."),
+  ref: string("Element ref from the latest snapshot. Include it on every action that targets this element; refs are not inherited from earlier batch actions."),
+  selector: string("CSS selector for the element targeted by this action. Include it on each target-based action when no ref is used; selectors are not inherited from earlier batch actions."),
   text: string("Text to type, or a text condition for wait."),
   key: string("Key for kind=press, such as Enter, Escape, Tab or Control+Shift+T."),
   submit: boolean("Submit after typing where supported."),
@@ -109,11 +109,11 @@ const properties = {
   timeoutMs: integer("Timeout in milliseconds, where supported by the native action."),
   actions: {
     type: "array",
-    description: "Ordered BrowserActRequest steps for action=act, kind=batch, executed sequentially against the same tab in one /act request. Use act kinds such as click, clickCoords, type, press, hover, scrollIntoView, drag, select, fill, resize, wait, evaluate, or close; open, navigate, snapshot, and screenshot are separate actions and cannot be batch entries. Take a fresh snapshot before using refs. Page-changing steps can invalidate refs, so split the batch and snapshot again before dependent actions. If the runtime rejects a batch, split it into individual calls.",
+    description: "Ordered BrowserActRequest steps for action=act, kind=batch, executed sequentially against the same tab in one /act request. Use act kinds such as click, clickCoords, type, press, hover, scrollIntoView, drag, select, fill, resize, wait, evaluate, or close; open, navigate, snapshot, and screenshot are separate actions and cannot be batch entries. Each action has its own arguments: a ref or selector on click does not carry over to type or later actions. For type, always include ref or selector on that same type action, even after clicking the field. Example: [{\"kind\":\"click\",\"ref\":\"e4\"},{\"kind\":\"type\",\"ref\":\"e4\",\"text\":\"search terms\"},{\"kind\":\"press\",\"ref\":\"e4\",\"key\":\"Enter\"}]. Take a fresh snapshot before using refs. Page-changing steps can invalidate refs, so split the batch and snapshot again before dependent actions. If the runtime rejects a batch, split it into individual calls.",
     items: {
       type: "object",
       properties: {
-        kind: { type: "string", enum: BROWSER_ACT_KINDS },
+        kind: { type: "string", enum: BROWSER_ACT_KINDS, description: "Act to execute in this step. Element-targeting steps must provide their own ref or selector in the same action; prior batch steps do not supply or inherit a target." },
         ...actProperties,
       },
       additionalProperties: true,
@@ -123,7 +123,7 @@ const properties = {
 
 export const browserToolDefinition = {
   name: "openclaw_browser",
-  description: "Control Chrome through OpenClaw. Use action=open or navigate with targetUrl; if Chrome is not running, use open to launch it and open the requested URL. Use snapshot before page interactions, then pass its refs to action=act. For predictable multi-step interactions, use action=act with kind=batch and an ordered actions array when supported; batch entries are act kinds, not open, navigate, snapshot, or screenshot. Page-changing steps can invalidate refs. Batch stops on the first error by default; stopOnError:false continues.",
+  description: "Control Chrome through OpenClaw. Use action=open or navigate with targetUrl; if Chrome is not running, use open to launch it and open the requested URL. Use snapshot before page interactions, then pass its refs to action=act. For predictable multi-step interactions, use action=act with kind=batch and an ordered actions array when supported. Every element-targeting action must include its own ref or selector; click targets are not inherited by later type, fill, or press actions. For type, always repeat ref or selector on the type step, even after clicking the field. Batch entries are act kinds, not open, navigate, snapshot, or screenshot. Page-changing steps can invalidate refs. Batch stops on the first error by default; stopOnError:false continues.",
   annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: true },
   inputSchema: {
     type: "object",

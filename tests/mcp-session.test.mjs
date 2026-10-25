@@ -62,6 +62,8 @@ test("MCP instructions follow the OpenChatX builder pattern and adapt to the hos
   assert.match(buildMcpInstructions(), /# Tool routing/u);
   assert.match(buildMcpInstructions(), /openclaw_dispatch_action/u);
   assert.match(buildMcpInstructions(), /openclaw_browser with action=act, kind=batch/u);
+  assert.match(buildMcpInstructions(), /Every type action must include its own ref or selector/u);
+  assert.match(buildMcpInstructions(), /not inherited by later actions/u);
   assert.match(buildMcpInstructions(), /openclaw_computer action=batch with up to five actions/u);
   assert.doesNotMatch(buildMcpInstructions(), /project_manage|subagent_run|summarize/u);
 });
@@ -155,6 +157,8 @@ test("start_here returns bridge-specific operating instructions", async () => {
   assert.match(instructions, /batch forms when supported \(up to five items\)/u);
   assert.match(instructions, /action: "act"[\s\S]*kind: "batch"/u);
   assert.match(instructions, /up to five predictable actions/u);
+  assert.match(instructions, /Each browser batch action has its own target/u);
+  assert.match(instructions, /Always include ref or selector on the type action itself/u);
   assert.match(instructions, /If the runtime rejects batching, fall back to individual calls/u);
   assert.match(instructions, /explicit authorization before committing, pushing, force-pushing, merging/u);
   assert.match(instructions, /redaction is best-effort/u);

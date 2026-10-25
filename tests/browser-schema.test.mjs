@@ -16,7 +16,7 @@ test("Browser schema keeps implementation details out of the public contract", (
   assert.equal(schema.properties.profile, undefined);
   assert.equal(schema.properties.browser, undefined);
   assert.equal(schema.properties.systemProfile, undefined);
-  assert.doesNotMatch(browserToolDefinition.description, /profile|systemProfile|timeout|extension|Gateway|selector/i);
+  assert.doesNotMatch(browserToolDefinition.description, /profile|systemProfile|timeout|extension|Gateway/i);
   assert.ok(Buffer.byteLength(JSON.stringify(schema)) < 30_000);
 });
 
@@ -29,12 +29,17 @@ test("BrowserAct parameter descriptions explain operation-specific inputs", () =
   assert.match(schema.properties.stopOnError.description, /batch/i);
   assert.match(schema.properties.kind.description, /kind=batch/i);
   assert.match(schema.properties.actions.description, /BrowserActRequest[\s\S]*one \/act request[\s\S]*snapshot[\s\S]*dependent actions/i);
+  assert.match(schema.properties.actions.description, /click does not carry over to type/i);
+  assert.match(schema.properties.actions.description, /same type action/i);
+  assert.match(schema.properties.actions.items.properties.kind.description, /inherit/i);
+  assert.match(schema.properties.ref.description, /not inherited from earlier batch actions/i);
+  assert.match(schema.properties.selector.description, /not inherited from earlier batch actions/i);
   assert.match(schema.properties.url.description, /kind=wait/i);
 });
 
 test("Browser description contains only essential usage guidance", () => {
   assert.equal(
     browserToolDefinition.description,
-    "Control Chrome through OpenClaw. Use action=open or navigate with targetUrl; if Chrome is not running, use open to launch it and open the requested URL. Use snapshot before page interactions, then pass its refs to action=act. For predictable multi-step interactions, use action=act with kind=batch and an ordered actions array when supported; batch entries are act kinds, not open, navigate, snapshot, or screenshot. Page-changing steps can invalidate refs. Batch stops on the first error by default; stopOnError:false continues."
+    "Control Chrome through OpenClaw. Use action=open or navigate with targetUrl; if Chrome is not running, use open to launch it and open the requested URL. Use snapshot before page interactions, then pass its refs to action=act. For predictable multi-step interactions, use action=act with kind=batch and an ordered actions array when supported. Every element-targeting action must include its own ref or selector; click targets are not inherited by later type, fill, or press actions. For type, always repeat ref or selector on the type step, even after clicking the field. Batch entries are act kinds, not open, navigate, snapshot, or screenshot. Page-changing steps can invalidate refs. Batch stops on the first error by default; stopOnError:false continues."
   );
 });
