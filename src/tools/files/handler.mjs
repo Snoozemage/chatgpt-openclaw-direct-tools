@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { readFile, readdir } from "node:fs/promises";
+import { readFile, readdir, stat } from "node:fs/promises";
+import { createTwoFilesPatch } from "diff";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { agentId, invokeTimeoutMs, openclawCli, stateDir } from "../../config/runtime.mjs";
@@ -79,6 +80,91 @@ async function getNativeFileTool(name) {
   return tool;
 }
 
+const MAX_PATCH_FILE_BYTES = 128 * 1024;
+const MAX_PATCH_PREVIEW_CHARS = 250_000;
+
+function patchFileDescriptors(input) {
+  if (typeof input !== "string") return [];
+  const descriptors = [];
+  let current = null;
+  for (const line of input.split(/\r?\n/u)) {
+    const operation = line.match(/^\*\*\* (Add|Update|Delete) File:\s*(.+?)\s*$/u);
+    if (operation) {
+      current = { action: operation[1], source: operation[2], target: operation[2] };
+      descriptors.push(current);
+      continue;
+    }
+    const move = line.match(/^\*\*\* Move to:\s*(.+?)\s*$/u);
+    if (move && current && current.action === "Update") current.target = move[1];
+  }
+  return descriptors;
+}
+
+function resolvePatchPath(filePath, workspaceDir) {
+  return path.isAbsolute(filePath) ? path.normalize(filePath) : path.resolve(workspaceDir, filePath);
+}
+
+async function snapshotPatchFile(filePath) {
+  try {
+    const metadata = await stat(filePath);
+    if (!metadata.isFile() || metadata.size > MAX_PATCH_FILE_BYTES) {
+      return { available: false, exists: metadata.isFile(), content: "" };
+    }
+    const content = await readFile(filePath, "utf8");
+    if (content.includes("\0")) return { available: false, exists: true, content: "" };
+    return { available: true, exists: true, content };
+  } catch (error) {
+    if (error?.code === "ENOENT" || error?.code === "ENOTDIR") {
+      return { available: true, exists: false, content: "" };
+    }
+    return { available: false, exists: false, content: "" };
+  }
+}
+
+async function capturePatchSnapshots(input, workspaceDir) {
+  const descriptors = patchFileDescriptors(input).map((descriptor) => ({
+    action: descriptor.action,
+    source: resolvePatchPath(descriptor.source, workspaceDir),
+    target: resolvePatchPath(descriptor.target, workspaceDir),
+  }));
+  if (descriptors.length === 0) return null;
+
+  const snapshots = new Map();
+  for (const descriptor of descriptors) {
+    for (const filePath of new Set([descriptor.source, descriptor.target])) {
+      if (!snapshots.has(filePath)) snapshots.set(filePath, await snapshotPatchFile(filePath));
+    }
+  }
+  return { descriptors, snapshots };
+}
+
+async function buildPatchPreview(capture) {
+  if (!capture) return null;
+  const patches = [];
+  let totalChars = 0;
+  for (const descriptor of capture.descriptors) {
+    const before = capture.snapshots.get(descriptor.source);
+    const after = await snapshotPatchFile(descriptor.target);
+    if (!before?.available || !after.available) continue;
+    if (before.exists === after.exists && before.content === after.content) continue;
+
+    const patch = createTwoFilesPatch(
+      before.exists ? descriptor.source : "/dev/null",
+      after.exists ? descriptor.target : "/dev/null",
+      before.content,
+      after.content,
+      "",
+      "",
+      { context: 3 },
+    );
+    if (!/^@@ [-+]/mu.test(patch)) continue;
+    totalChars += patch.length;
+    if (totalChars > MAX_PATCH_PREVIEW_CHARS) return null;
+    patches.push(patch);
+  }
+  return patches.length > 0 ? patches.join("\n") : null;
+}
+
 function resultContent(result) {
   if (Array.isArray(result?.content)) return result.content;
   const payload = result?.details ?? result ?? { message: "OpenClaw native tool returned an empty result." };
@@ -109,7 +195,10 @@ function errorResponse(nativeTool, error, startedAt) {
   };
 }
 
-export function createFileToolHandler({ resolveTool = getNativeFileTool } = {}) {
+export function createFileToolHandler({
+  resolveTool = getNativeFileTool,
+  workspaceDir = process.env.OPENCLAW_WORKSPACE_DIR || path.join(stateDir, "workspace"),
+} = {}) {
   async function executeOne(nativeToolName, args = {}) {
     const startedAt = Date.now();
     try {
@@ -117,6 +206,12 @@ export function createFileToolHandler({ resolveTool = getNativeFileTool } = {}) 
       const preparedArgs = typeof tool.prepareArguments === "function"
         ? await tool.prepareArguments(args)
         : args;
+      let patchSnapshots = null;
+      if (nativeToolName === "apply_patch") {
+        try {
+          patchSnapshots = await capturePatchSnapshots(preparedArgs?.input, workspaceDir);
+        } catch {}
+      }
       const result = await tool.execute(randomUUID(), preparedArgs ?? {}, AbortSignal.timeout(invokeTimeoutMs));
       if (result?.isError === true) {
         return {
@@ -130,10 +225,20 @@ export function createFileToolHandler({ resolveTool = getNativeFileTool } = {}) 
         };
       }
 
-      const structuredContent = structuredDetails(result?.details);
+      const nativeStructuredContent = structuredDetails(result?.details);
+      let generatedPatch = null;
+      if (nativeToolName === "apply_patch" && patchSnapshots) {
+        try {
+          generatedPatch = await buildPatchPreview(patchSnapshots);
+        } catch {}
+      }
+      const structuredContent = {
+        ...(nativeStructuredContent ?? {}),
+        ...(generatedPatch ? { patch: generatedPatch } : {}),
+      };
       return {
         content: resultContent(result),
-        ...(structuredContent ? { structuredContent } : {}),
+        ...(Object.keys(structuredContent).length > 0 ? { structuredContent } : {}),
         diagnostics: {
           stage: "native_file_tool_execution",
           nativeTool: nativeToolName,

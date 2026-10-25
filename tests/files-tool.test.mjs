@@ -1,5 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { fileToolDefinitions } from "../src/tools/files/schema.mjs";
 import { createFileToolHandler } from "../src/tools/files/handler.mjs";
 import { toolDefinitions } from "../src/mcp/tool-definitions.mjs";
@@ -80,6 +83,62 @@ test("each public file tool prepares arguments when required, then calls its nat
   for (const call of calls) {
     assert.match(call.callId, /^[0-9a-f-]{36}$/i);
     assert.ok(call.signal instanceof AbortSignal);
+  }
+});
+
+test("edit and write preserve native unified patch metadata", async () => {
+  const patch = "--- before.txt\n+++ after.txt\n@@ -1 +1 @@\n-old\n+new\n";
+  const handler = createFileToolHandler({
+    resolveTool: async () => ({
+      execute: async () => ({
+        content: [{ type: "text", text: "File updated successfully." }],
+        details: { changed: true, diff: "-1 old\\n+1 new", patch, content: "duplicate" },
+      }),
+    }),
+  });
+
+  for (const [name, args] of [
+    ["openclaw_edit", { path: "test.txt", edits: [{ oldText: "old", newText: "new" }] }],
+    ["openclaw_write", { path: "test.txt", content: "new" }],
+  ]) {
+    const result = await handler(name, args);
+    assert.equal(result.structuredContent.patch, patch);
+    assert.equal(result.structuredContent.diff, "-1 old\\n+1 new");
+    assert.equal("content" in result.structuredContent, false);
+  }
+});
+
+test("apply_patch returns a unified diff of the file contents before and after the patch", async () => {
+  const workspaceDir = await mkdtemp(path.join(os.tmpdir(), "openclaw-patch-preview-"));
+  const filePath = path.join(workspaceDir, "patched.txt");
+  await writeFile(filePath, "before\nremoved\nsame\n", "utf8");
+
+  try {
+    const handler = createFileToolHandler({
+      workspaceDir,
+      resolveTool: async () => ({
+        execute: async () => {
+          await writeFile(filePath, "after\nadded\nsame\n", "utf8");
+          return {
+            content: [{ type: "text", text: "Success. Updated the following files: M patched.txt" }],
+            details: { summary: { added: [], modified: ["patched.txt"], deleted: [] } },
+          };
+        },
+      }),
+    });
+    const result = await handler("openclaw_apply_patch", {
+      input: "*** Begin Patch\n*** Update File: patched.txt\n@@\n-before\n-removed\n+after\n+added\n*** End Patch",
+    });
+
+    assert.match(result.structuredContent.patch, /^--- /m);
+    assert.match(result.structuredContent.patch, /^\+\+\+ /m);
+    assert.match(result.structuredContent.patch, /^@@ [-+]/m);
+    assert.match(result.structuredContent.patch, /^\-before$/m);
+    assert.match(result.structuredContent.patch, /^\+after$/m);
+    assert.match(result.structuredContent.patch, /^\-removed$/m);
+    assert.match(result.structuredContent.patch, /^\+added$/m);
+  } finally {
+    await rm(workspaceDir, { recursive: true, force: true });
   }
 });
 

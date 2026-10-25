@@ -2,6 +2,7 @@ export const monitorEvents = [];
 export const eventClients = new Set();
 let nextEventId = 1;
 let firstRetainedEventId = 1;
+const firstRetainedEventIdBySession = new Map();
 
 function redact(value, key = "") {
   if (/secret|token|password|api.?key|authorization|cookie|credential/i.test(key)) return "[REDACTED]";
@@ -23,6 +24,7 @@ function applySession(event, session) {
 
 function publishEvent(event) {
   if (event.id < firstRetainedEventId) return;
+  if (event.sessionId && event.id < (firstRetainedEventIdBySession.get(event.sessionId) ?? 0)) return;
   const safe = redact(event);
   const index = monitorEvents.findIndex(item => item.id === safe.id);
   if (index < 0) monitorEvents.push(safe); else monitorEvents[index] = safe;
@@ -39,8 +41,21 @@ export function clearMonitorEvents() {
   const clearedCount = monitorEvents.length;
   monitorEvents.length = 0;
   firstRetainedEventId = nextEventId;
+  firstRetainedEventIdBySession.clear();
   publishMonitorSignal({ type: "clear" });
   return clearedCount;
+}
+
+export function removeMonitorEventsForSession(sessionId) {
+  if (typeof sessionId !== "string" || !sessionId) return 0;
+  firstRetainedEventIdBySession.set(sessionId, nextEventId);
+  let removedCount = 0;
+  for (let index = monitorEvents.length - 1; index >= 0; index--) {
+    if (monitorEvents[index].sessionId !== sessionId) continue;
+    monitorEvents.splice(index, 1);
+    removedCount++;
+  }
+  return removedCount;
 }
 
 export function beginToolEvent(tool, args, requestId, session) {
@@ -91,7 +106,12 @@ export function finishToolEvent(event, result, error, session) {
           event.error = primary ? redact(primary) : { message: "Tool returned isError=true without error details." };
         }
         event.output = null;
-      } else event.output = parsedContent;
+      } else if (["openclaw_edit", "openclaw_write", "openclaw_apply_patch"].includes(event.tool)
+      && result.structuredContent
+      && typeof result.structuredContent === "object"
+      && (typeof result.structuredContent.patch === "string" || typeof result.structuredContent.diff === "string")) {
+      event.output = redact({ ...result.structuredContent, result: parsedContent });
+    } else event.output = parsedContent;
     } else if (result.isError) {
       if (!event.error) event.error = redact(result);
       event.output = null;
