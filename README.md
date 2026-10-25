@@ -53,6 +53,8 @@ Installed browser profile / extension
 
 The bridge serves MCP requests at `/mcp`, a health endpoint at `/healthz`, and the local monitor at `/monitor`. Tool-call events are streamed to the monitor over Server-Sent Events (SSE). Browser calls go through the Gateway HTTP tool-invocation endpoint; desktop calls go through the paired node command interface.
 
+The monitor includes searchable tool-call history, collapsible JSON trees with raw-text and deeper-expansion controls, per-session and per-tool-call JSON copy actions, and side-by-side or line-by-line rendering for unified diffs. It uses a fixed dark theme. `json-formatter-js` and `diff2html` assets are served locally from pinned npm dependencies; the monitor does not load these libraries from a CDN.
+
 The Browser feature lives under `src/tools/browser/`. Its schema describes the MCP-facing contract, while its handler supplies the documented default profile and applies a **10-second default timeout** to `action: "open"` when the caller does not specify `timeoutMs`. Browser-specific payload validation remains the responsibility of the native OpenClaw runtime. If an open operation times out, the bridge checks the current tab list once; it reports success only if the requested URL is observed, and never retries the open automatically.
 
 ---
@@ -95,8 +97,9 @@ The monitor provides:
 - **Live call status** — running, completed, and failed calls.
 - **Call details** — operation, arguments, output, elapsed time, and diagnostics when available.
 - **Filtering** — view calls by status.
-- **Copy log** — copy the newest monitor events as JSON.
-- **Clear history** — clear the in-memory event history.
+- **Copy session / tool call** — copy a session with its retained events, or copy an individual call, as JSON.
+- **Clear monitor** — clear the in-memory event history and hide all current sessions from the monitor.
+- **Remove session** — remove that session and its retained tool-call logs; the MCP session's initialization state remains intact and it reappears if used again.
 - **Bounded retention** — keep at most the 200 newest events in memory.
 
 The monitor is intended for local development and troubleshooting. Redaction is best-effort, so do not pass secrets in tool arguments.

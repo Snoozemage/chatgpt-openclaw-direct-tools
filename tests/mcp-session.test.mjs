@@ -5,6 +5,7 @@ import { mcpHandler } from "../src/mcp/sdk-server.mjs";
 import {
   isSessionInitialized,
   listSessions,
+  clearSessionsFromMonitor,
   removeSessionFromMonitor,
   requestSessionId,
   touchSession,
@@ -223,7 +224,7 @@ test("bridge restart delegates process replacement to the external supervisor", 
 });
 
 test("monitor displays the session count only once inside the All sessions card", async () => {
-  const html = await readFile(new URL("../src/monitor/index.html", import.meta.url), "utf8");
+  const html = (await readFile(new URL("../src/monitor/index.html", import.meta.url), "utf8")) + await readFile(new URL("../src/monitor/assets/monitor.js", import.meta.url), "utf8");
   assert.match(html, /ChatGPT Sessions<\/span><\/div>/u);
   assert.doesNotMatch(html, /id="sessionCount"/u);
   assert.match(html, /sessions\.length/u);
@@ -234,4 +235,60 @@ test("monitor displays the session count only once inside the All sessions card"
   assert.match(html, /fetch\("\/api\/restart",\{method:"POST"\}\)/u);
   assert.match(html, /String\(health\.pid\)/u);
   assert.match(html, /observedOffline/u);
+  assert.match(html, /id="callSearch"/u);
+  assert.match(html, /window\.JSONFormatter/u);
+  assert.match(html, /window\.Diff2Html\.html/u);
+  assert.match(html, /data-copy-session=/u);
+  assert.match(html, /data-copy-call=/u);
+  assert.match(html, /data-view-block=/u);
+  assert.match(html, /data-depth-block=/u);
+  assert.match(html, /data-diff-mode=/u);
+  assert.match(html, /json-formatter\.css/u);
+  assert.match(html, /events=events\.filter\(event=>event\.sessionId!==e\.sessionId\)/u);
+  assert.match(html, /if\(e\.type==="clear"\)\{events=\[\];sessions=\[\]/u);
+  assert.match(html, /clearedSessionCount/u);
+  assert.doesNotMatch(html, /themeToggle|monitor-theme|data-theme="light"|copyHistory|Copy log|data-copy-block=/u);
+  assert.doesNotMatch(html, /cdn\.jsdelivr\.net|unpkg\.com/u);
+});
+
+test("monitor formatter and diff assets are self-hosted from pinned npm dependencies", async () => {
+  const server = await readFile(new URL("../src/server.mjs", import.meta.url), "utf8");
+  const packageJson = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
+  assert.equal(packageJson.dependencies["json-formatter-js"], "2.5.23");
+  assert.equal(packageJson.dependencies.diff2html, "3.4.56");
+  assert.match(server, /monitor\/assets\/json-formatter\.js/u);
+  assert.match(server, /monitor\/assets\/json-formatter\.css/u);
+  assert.match(server, /monitor\/assets\/diff2html\.js/u);
+  assert.match(server, /monitor\/assets\/diff2html\.css/u);
+  assert.match(server, /monitor\/assets\/monitor\.js/u);
+  assert.match(server, /monitor\/assets\/monitor\.css/u);
+  for (const assetPath of [
+    "../node_modules/json-formatter-js/dist/json-formatter.umd.js",
+    "../node_modules/json-formatter-js/dist/json-formatter.css",
+    "../node_modules/diff2html/bundles/js/diff2html.min.js",
+    "../node_modules/diff2html/bundles/css/diff2html.min.css",
+    "../src/monitor/assets/monitor.js",
+    "../src/monitor/assets/monitor.css",
+  ]) {
+    const asset = await readFile(new URL(assetPath, import.meta.url));
+    assert.ok(asset.byteLength > 500, "Expected non-empty UI asset: " + assetPath);
+  }
+});
+
+test("clearing monitor sessions hides current sessions without resetting their MCP initialization", async () => {
+  const sessionKey = "clear-monitor-sessions-test";
+  await callTool("start_here", { task: "clear monitor sessions test" }, sessionKey);
+  const before = listSessions().find(session => session.task === "clear monitor sessions test");
+  assert.ok(before);
+  assert.equal(isSessionInitialized(sessionKey), true);
+
+  const clearedCount = clearSessionsFromMonitor();
+  assert.ok(clearedCount >= 1);
+  assert.equal(listSessions().some(session => session.id === before.id), false);
+  assert.equal(isSessionInitialized(sessionKey), true);
+  assert.equal(touchSession(sessionKey), undefined);
+
+  const nextCall = await callTool("start_here", { task: "session reappears after new call" }, sessionKey);
+  assert.equal(nextCall.payload.result.isError, undefined);
+  assert.ok(listSessions().some(session => session.id === before.id));
 });

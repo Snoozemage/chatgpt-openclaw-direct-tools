@@ -4,28 +4,21 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>OpenClaw × ChatGPT</title>
-<style>
-:root{color-scheme:dark;--bg:#0b1020;--panel:#111a2b;--panel2:#172238;--line:#283650;--text:#e8eef9;--muted:#91a0ba;--green:#50d49a;--red:#ff7b83;--amber:#f6c66a;--blue:#8ab4ff}
-*{box-sizing:border-box}html{height:100%;overflow:hidden}body{height:100vh;overflow:hidden;margin:0;background:var(--bg);color:var(--text);font:14px/1.45 ui-sans-serif,system-ui,-apple-system,Segoe UI,sans-serif}
-header{height:68px;flex:none;display:flex;align-items:center;justify-content:space-between;gap:14px;padding:0 24px;border-bottom:1px solid var(--line);background:#0e1627;position:relative;z-index:2}.brand{font-size:18px;font-weight:700;letter-spacing:.2px;white-space:nowrap}.brand span{color:var(--blue)}.status{display:flex;align-items:center;gap:9px;color:var(--muted);font-size:12px}.dot{width:8px;height:8px;border-radius:50%;background:var(--amber);flex:none}.dot.live{background:var(--green);box-shadow:0 0 10px #50d49a70}
-.layout{display:grid;grid-template-columns:minmax(300px,38%) minmax(0,1fr);height:calc(100vh - 68px);min-height:0;overflow:hidden}
-aside{border-right:1px solid var(--line);min-width:0;min-height:0;height:100%;overflow-y:auto;overscroll-behavior:contain}.panel-title{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:15px 16px 10px;font-weight:650}.muted{color:var(--muted)}.tools{padding:0 10px 16px;display:flex;flex-direction:column;gap:6px}
-.session-card,.call{width:100%;text-align:left;background:transparent;border:1px solid transparent;border-radius:9px;padding:10px;color:var(--text);cursor:pointer}.session-card{position:relative}.session-card:hover,.call:hover{background:var(--panel)}.session-card.selected,.call.selected{background:var(--panel2);border-color:#3b5277}.session-open{display:block;width:100%;padding:0 28px 0 0;text-align:left;background:transparent;border:0;color:inherit;font:inherit;cursor:pointer}.session-remove{position:absolute;top:7px;right:7px;width:24px;height:24px;display:grid;place-items:center;border:1px solid transparent;border-radius:6px;background:transparent;color:var(--muted);font-size:17px;line-height:1;cursor:pointer}.session-remove:hover{background:#4a242d;color:var(--red);border-color:#63313b}.session-remove:disabled{opacity:.45;cursor:wait}.session-head,.calltop{display:flex;align-items:center;justify-content:space-between;gap:8px}.session-name,.toolname{font-weight:650;overflow-wrap:anywhere}.session-task{font-size:12px;color:#c6d2e6;margin-top:4px;overflow-wrap:anywhere}.session-meta,.meta{font-size:11px;color:var(--muted);margin-top:6px;display:flex;align-items:center;flex-wrap:wrap;gap:5px}.badge{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;padding:3px 6px;border-radius:5px;background:#283650;color:var(--muted);white-space:nowrap}.badge.active,.badge.success{background:#153b31;color:var(--green)}.badge.inactive{background:#283650;color:var(--muted)}.badge.needs-init,.badge.running{background:#49391d;color:var(--amber)}.badge.error{background:#4a242d;color:var(--red)}.separator{height:1px;background:var(--line);margin:2px 14px 0}.toolname{overflow-wrap:anywhere}.subline{font:12px ui-monospace,SFMono-Regular,Consolas,monospace;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:7px}
-main{padding:22px;min-width:0;min-height:0;height:100%;overflow-y:auto;overscroll-behavior:contain}.summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:20px}.stat{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:13px 15px}.statlabel{color:var(--muted);font-size:12px}.statvalue{font-size:24px;font-weight:750;margin-top:5px}.detail{background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden}.detailhead{padding:17px 18px;border-bottom:1px solid var(--line);display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.detailhead h2{margin:0;font-size:16px;overflow-wrap:anywhere}.detailhead p{margin:5px 0 0;color:var(--muted);font-size:12px}.section{padding:16px 18px;border-bottom:1px solid var(--line)}.section:last-child{border-bottom:0}.label{font-size:11px;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);margin-bottom:8px;font-weight:700}pre{margin:0;background:#080d18;border:1px solid #1f2a3e;border-radius:8px;padding:12px;white-space:pre-wrap;overflow-wrap:anywhere;max-height:340px;overflow:auto;font:12px/1.55 ui-monospace,SFMono-Regular,Consolas,monospace;color:#d7e4fa}.empty{display:grid;place-items:center;min-height:120px;color:var(--muted);text-align:center;padding:22px}.filters{display:flex;gap:8px;align-items:center}select,button.action{background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:7px;padding:7px 9px;font:inherit}button.action{cursor:pointer}button.action:disabled{opacity:.5;cursor:wait}button.action.danger{border-color:#63313b;background:#321d28;color:var(--red)}button.action.danger:hover{background:#4a242d}.foot{color:var(--muted);font-size:11px;margin-top:14px}
-@media(max-width:850px){.layout{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(260px,42vh) minmax(0,1fr)}aside{border-right:0;border-bottom:1px solid var(--line)}main{padding:14px}header{padding:0 14px}.status{gap:6px}.brand{font-size:15px}.status #connection{display:none}.summary{gap:6px}.stat{padding:10px}.statvalue{font-size:20px}}@media(max-width:480px){#copy{display:none}header{gap:6px;padding:0 9px}.status{gap:4px}.status button.action{padding:6px;font-size:11px}.brand{font-size:13px}}
-</style>
+<link rel="stylesheet" href="/monitor/assets/json-formatter.css">
+<link rel="stylesheet" href="/monitor/assets/diff2html.css">
+<link rel="stylesheet" href="/monitor/assets/monitor.css">
 </head>
 <body>
 <header>
   <div class="brand">OpenClaw <span>× ChatGPT</span></div>
-  <div class="status"><i id="dot" class="dot"></i><span id="connection">Connecting to local bridge…</span><button id="copy" class="action" title="Copy events and session summary as JSON">Copy log</button><button id="clear" class="action" title="Clear in-memory tool-call history">Clear</button><button id="refresh" class="action">Refresh</button><button id="restart" class="action danger" title="Restart only the local MCP bridge; Gateway and Tunnel are left running">Restart</button></div>
+  <div class="status"><i id="dot" class="dot"></i><span id="connection">Connecting to local bridge…</span><button id="clear" class="action" title="Clear in-memory tool-call history">Clear</button><button id="refresh" class="action">Refresh</button><button id="restart" class="action danger" title="Restart only the local MCP bridge; Gateway and Tunnel are left running">Restart</button></div>
 </header>
 <div class="layout">
   <aside>
     <div class="panel-title"><span>ChatGPT Sessions</span></div>
     <div id="sessions" class="tools"></div>
     <div class="separator"></div>
-    <div class="panel-title"><span>Tool calls</span><div class="filters"><select id="filter"><option value="all">All statuses</option><option value="running">Running</option><option value="success">Success</option><option value="error">Error</option></select></div></div>
+    <div class="panel-title call-filter-title"><span>Tool calls</span><div class="filters"><input id="callSearch" type="search" placeholder="Search calls…" aria-label="Search tool calls" autocomplete="off"><select id="filter" aria-label="Filter tool call status"><option value="all">All statuses</option><option value="running">Running</option><option value="success">Success</option><option value="error">Error</option></select></div></div>
     <div id="calls" class="tools"></div>
   </aside>
   <main>
@@ -34,156 +27,8 @@ main{padding:22px;min-width:0;min-height:0;height:100%;overflow-y:auto;overscrol
     <div class="foot">Local-only bridge activity · session IDs are shown as local aliases · sensitive values are redacted where detected · up to 200 newest tool events are kept in memory. Session activity becomes inactive after 30 seconds without a request.</div>
   </main>
 </div>
-<script>
-const $=id=>document.getElementById(id);
-let events=[],sessions=[],selectedEvent=null,selectedSession="all",source=null;
-function fmtTime(v){try{return v?new Date(v).toLocaleTimeString():"—"}catch{return "—"}}
-function pretty(v){return typeof v==="string"?v:JSON.stringify(v,null,2)}
-function statusLabel(s){return s==="success"?"Success":s==="error"?"Error":s==="running"?"Running":"Queued"}
-function esc(v){return String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
-function block(label,value){return '<div class="section"><div class="label">'+esc(label)+'</div><pre>'+esc(value==null?"(empty)":pretty(value))+'</pre></div>'}
-function currentStatus(session){return Date.now()-Number(session.lastSeenAt)<30000?"active":"inactive"}
-function upsertSession(session){if(!session||!session.id)return;const index=sessions.findIndex(item=>item.id===session.id);if(index<0)sessions.push(session);else sessions[index]={...sessions[index],...session};sessions.sort((a,b)=>Number(b.lastSeenAt)-Number(a.lastSeenAt));renderSessions()}
-function renderSessions(){
-  const chatButtons='<button class="session-card '+(selectedSession==="all"?"selected":"")+'" data-session="all"><div class="session-head"><span class="session-name">All sessions</span><span class="badge">'+sessions.length+'</span></div><div class="session-task">View tool calls from every chat</div></button>';
-  const cards=sessions.map(s=>{
-    const status=currentStatus(s),init=s.initialized?'<span class="badge success">Initialized</span>':'<span class="badge needs-init">Needs start_here</span>';
-    return '<div class="session-card '+(selectedSession===s.id?"selected":"")+'"><button type="button" class="session-open" data-session="'+esc(s.id)+'" aria-label="View '+esc(s.id)+'"><div class="session-head"><span class="session-name">'+esc(s.id)+'</span><span class="badge '+status+'">'+status+'</span></div><div class="session-task">'+esc(s.task||"ChatGPT conversation")+'</div><div class="session-meta">'+init+'<span>'+esc(s.lastTool||"No tool call yet")+'</span></div><div class="session-meta">Last activity '+esc(fmtTime(s.lastSeenAt))+'</div></button><button type="button" class="session-remove" data-remove-session="'+esc(s.id)+'" title="Remove session" aria-label="Remove '+esc(s.id)+' from monitor"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v5"/><path d="M14 11v5"/></svg></button></div>';
-  }).join("");
-  const hasUnscoped=events.some(e=>!e.sessionId);
-  const localButton=hasUnscoped?'<button class="session-card '+(selectedSession==="unscoped"?"selected":"")+'" data-session="unscoped"><div class="session-head"><span class="session-name">Unscoped / local</span></div><div class="session-task">Requests without a chat session ID</div></button>':"";
-  $("sessions").innerHTML=chatButtons+(cards||'<div class="empty">No identified ChatGPT sessions yet.</div>')+localButton;
-  document.querySelectorAll("[data-session]").forEach(b=>b.onclick=()=>{selectedSession=b.dataset.session;selectedEvent=null;render()});
-  document.querySelectorAll("[data-remove-session]").forEach(b=>b.onclick=()=>void removeSession(b.dataset.removeSession,b));
-}
-async function removeSession(sessionId,button){
-  if(!sessionId)return;
-  button.disabled=true;
-  try{
-    const response=await fetch("/api/sessions/"+encodeURIComponent(sessionId),{method:"DELETE"});
-    if(!response.ok)throw new Error("HTTP "+response.status);
-    sessions=sessions.filter(s=>s.id!==sessionId);
-    if(selectedSession===sessionId){selectedSession="all";selectedEvent=null}
-    render();
-    $("connection").textContent="Session removed from monitor";
-  }catch(error){
-    $("connection").textContent="Could not remove session: "+error.message;
-    button.disabled=false;
-  }
-}
-function matchingEvents(){return events.filter(e=>selectedSession==="all"||(selectedSession==="unscoped"?!e.sessionId:e.sessionId===selectedSession))}
-function render(){
-  renderSessions();
-  const filtered=matchingEvents().filter(e=>$("filter").value==="all"||e.status===$("filter").value);
-  const list=[...filtered].sort((a,b)=>b.id-a.id);
-  if(selectedEvent==null||!matchingEvents().some(e=>e.id===selectedEvent))selectedEvent=list[0]?.id??null;
-  $("calls").innerHTML=list.length?list.map(e=>'<button class="call '+(e.id===selectedEvent?"selected":"")+'" data-id="'+e.id+'"><div class="calltop"><span class="toolname">'+esc(e.tool||"Unknown tool")+'</span><span class="badge '+esc(e.status)+'">'+statusLabel(e.status)+'</span></div><div class="subline">'+esc(e.command||e.method||e.summary||"No command detail")+'</div><div class="meta">'+esc(e.sessionLabel||"Unscoped / local")+' · '+esc(fmtTime(e.startedAt))+' · '+(e.durationMs==null?"in progress":e.durationMs+" ms")+' · #'+e.id+'</div></button>').join(""):'<div class="empty">No tool calls for this session.</div>';
-  $("running").textContent=String(matchingEvents().filter(e=>e.status==="running").length);
-  $("completed").textContent=String(matchingEvents().filter(e=>e.status==="success").length);
-  $("errors").textContent=String(matchingEvents().filter(e=>e.status==="error").length);
-  document.querySelectorAll(".call").forEach(b=>b.onclick=()=>{selectedEvent=Number(b.dataset.id);render()});
-  renderDetail();
-}
-function renderDetail(){
-  const e=events.find(x=>x.id===selectedEvent);
-  if(!e){$("detail").innerHTML='<div class="empty">Select a tool call to inspect its arguments and output.</div>';return}
-  const output=e.error==null?e.output:{error:e.error,...(e.diagnostics?{diagnostics:e.diagnostics}:{})};
-  const init=e.sessionInitialized===true?"Initialized":e.sessionInitialized===false?"Not initialized":"No session gate";
-  $("detail").innerHTML='<div class="detailhead"><div><h2>'+esc(e.tool)+'</h2><p>Call #'+e.id+' · '+esc(e.sessionLabel||"Unscoped / local")+' · '+esc(init)+' · started '+esc(fmtTime(e.startedAt))+' · '+(e.durationMs==null?"running":e.durationMs+" ms")+'</p></div><span class="badge '+esc(e.status)+'">'+statusLabel(e.status)+'</span></div>'+block("Command / operation",e.command||e.method||"(no explicit command; inspect arguments)")+block("Arguments",e.arguments)+block("Output",output);
-}
-function apply(e){
-  if(!e)return;
-  if(e.type==="session"){upsertSession(e.session);return}
-  if(e.type==="session_removed"){
-    sessions=sessions.filter(s=>s.id!==e.sessionId);
-    if(selectedSession===e.sessionId){selectedSession="all";selectedEvent=null}
-    render();
-    return;
-  }
-  if(e.type==="clear"){events=[];selectedEvent=null;render();return}
-  if(!e.id)return;
-  const i=events.findIndex(x=>x.id===e.id);if(i<0)events.push(e);else events[i]={...events[i],...e};
-  events.sort((a,b)=>a.id-b.id);if(events.length>200)events=events.slice(-200);
-  if(selectedEvent==null||!events.some(x=>x.id===selectedEvent))selectedEvent=e.id;
-  render();
-}
-async function load(){
-  try{
-    const results=await Promise.all([fetch("/api/events",{cache:"no-store"}),fetch("/api/sessions",{cache:"no-store"})]);
-    if(!results[0].ok||!results[1].ok)throw new Error("HTTP "+(!results[0].ok?results[0].status:results[1].status));
-    const eventData=await results[0].json(),sessionData=await results[1].json();
-    events=eventData.events||[];sessions=sessionData.sessions||[];
-    if(selectedEvent==null&&events.length)selectedEvent=events[events.length-1].id;
-    $("dot").classList.add("live");$("connection").textContent="Bridge connected";render();connectEvents();
-  }catch(e){$("dot").classList.remove("live");$("connection").textContent="Bridge offline"}
-}
-function connectEvents(){
-  if(source)source.close();source=new EventSource("/events");
-  source.onopen=()=>{$("dot").classList.add("live");$("connection").textContent="Live · bridge connected"};
-  source.onmessage=e=>{try{apply(JSON.parse(e.data))}catch{}};
-  source.onerror=()=>{$("dot").classList.remove("live");$("connection").textContent="Reconnecting…"};
-}
-async function copyText(text){
-  if(navigator.clipboard&&window.isSecureContext){await navigator.clipboard.writeText(text);return}
-  const field=document.createElement("textarea");field.value=text;field.setAttribute("readonly","");field.style.position="fixed";field.style.left="-9999px";document.body.appendChild(field);field.select();const copied=document.execCommand("copy");field.remove();if(!copied)throw new Error("Clipboard access was blocked by the browser");
-}
-async function copyHistory(){
-  const button=$("copy");button.disabled=true;
-  try{
-    const results=await Promise.all([fetch("/api/events",{cache:"no-store"}),fetch("/api/sessions",{cache:"no-store"})]);
-    if(!results[0].ok||!results[1].ok)throw new Error("HTTP "+(!results[0].ok?results[0].status:results[1].status));
-    const d=await results[0].json(),s=await results[1].json(),current=(Array.isArray(d.events)?d.events:[]).slice(-200);
-    const payload={copiedAt:new Date().toISOString(),limit:200,count:current.length,sessions:s.sessions||[],events:current};
-    await copyText(JSON.stringify(payload,null,2));$("connection").textContent="Copied "+current.length+" events and "+payload.sessions.length+" sessions";
-  }catch(e){$("connection").textContent="Could not copy log: "+e.message}finally{button.disabled=false}
-}
-async function clearHistory(){
-  const button=$("clear");button.disabled=true;
-  try{const r=await fetch("/api/events/clear",{method:"POST"});if(!r.ok)throw new Error("HTTP "+r.status);const d=await r.json();events=[];selectedEvent=null;render();$("connection").textContent="History cleared ("+(d.clearedCount||0)+" events)"}catch(e){$("connection").textContent="Could not clear history: "+e.message}finally{button.disabled=false}
-}
-async function restartBridge(){
-  const button=$("restart");button.disabled=true;
-  $("connection").textContent="Requesting bridge restart…";
-  try{
-    const response=await fetch("/api/restart",{method:"POST"});
-    const data=await response.json().catch(()=>({}));
-    if(!response.ok)throw new Error(data.error||("HTTP "+response.status));
-    const previousPid=data.previousPid==null?null:String(data.previousPid);
-    if(source){source.close();source=null}
-    $("dot").classList.remove("live");
-    $("connection").textContent="Restart scheduled · waiting for bridge to return…";
-    const deadline=Date.now()+60000;
-    let observedOffline=false;
-    let lastHealthError="";
-    while(Date.now()<deadline){
-      await new Promise(resolve=>setTimeout(resolve,800));
-      try{
-        const healthResponse=await fetch("/healthz",{cache:"no-store"});
-        if(!healthResponse.ok){observedOffline=true;lastHealthError="HTTP "+healthResponse.status;continue}
-        const health=await healthResponse.json();
-        if(!health.ok||health.server!=="openclaw-chatgpt-bridge")continue;
-        const currentPid=health.pid==null?null:String(health.pid);
-        if((previousPid!==null&&currentPid!==null&&currentPid!==previousPid)
-          ||(observedOffline&&currentPid!==previousPid)){
-          await load();
-          $("connection").textContent="Bridge restarted · connected";
-          button.disabled=false;
-          return;
-        }
-        if(currentPid===null)lastHealthError="Health endpoint did not return a PID";
-      }catch(error){observedOffline=true;lastHealthError=error.message}
-    }
-    $("connection").textContent="Restart timed out · "+(lastHealthError||"check logs and verify the bridge PID");
-    button.disabled=false;
-  }catch(error){
-    $("connection").textContent="Could not restart bridge: "+error.message;
-    button.disabled=false;
-    void load();
-  }
-}
-$("filter").onchange=render;$("refresh").onclick=load;$("clear").onclick=clearHistory;$("copy").onclick=copyHistory;$("restart").onclick=restartBridge;
-window.setInterval(renderSessions,5000);
-load();
-</script>
+<script src="/monitor/assets/json-formatter.js"></script>
+<script src="/monitor/assets/diff2html.js"></script>
+<script src="/monitor/assets/monitor.js"></script>
 </body>
 </html>

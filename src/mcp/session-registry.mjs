@@ -1,3 +1,5 @@
+import { removeMonitorEventsForSession } from "../monitor/events.mjs";
+
 const sessionsByKey = new Map();
 const hiddenSessionKeys = new Set();
 let nextSessionNumber = 1;
@@ -79,7 +81,14 @@ export function removeSessionFromMonitor(sessionId) {
   const entry = [...sessionsByKey.entries()].find(([, session]) => session.id === sessionId);
   if (!entry) return false;
   hiddenSessionKeys.add(entry[0]);
+  removeMonitorEventsForSession(sessionId);
   return true;
+}
+
+export function clearSessionsFromMonitor() {
+  const clearedCount = listSessions().length;
+  for (const sessionKey of sessionsByKey.keys()) hiddenSessionKeys.add(sessionKey);
+  return clearedCount;
 }
 
 export function listSessions() {

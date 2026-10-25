@@ -8,7 +8,7 @@ import {
 } from "@modelcontextprotocol/node";
 import { host, port, gatewayPort } from "./config/runtime.mjs";
 import { monitorEvents, eventClients, clearMonitorEvents, publishMonitorSignal } from "./monitor/events.mjs";
-import { listSessions, removeSessionFromMonitor } from "./mcp/session-registry.mjs";
+import { clearSessionsFromMonitor, listSessions, removeSessionFromMonitor } from "./mcp/session-registry.mjs";
 import { mcpHandler } from "./mcp/sdk-server.mjs";
 
 const nodeMcpHandler = toNodeHandler(mcpHandler, {
@@ -19,8 +19,52 @@ const validateMcpHost = localhostHostValidation();
 const validateMcpOrigin = localhostOriginValidation();
 let restartPending = false;
 
+const monitorAssets = new Map([
+  ["/monitor/assets/json-formatter.js", {
+    url: new URL("../node_modules/json-formatter-js/dist/json-formatter.umd.js", import.meta.url),
+    contentType: "text/javascript; charset=utf-8",
+  }],
+  ["/monitor/assets/json-formatter.css", {
+    url: new URL("../node_modules/json-formatter-js/dist/json-formatter.css", import.meta.url),
+    contentType: "text/css; charset=utf-8",
+  }],
+  ["/monitor/assets/diff2html.js", {
+    url: new URL("../node_modules/diff2html/bundles/js/diff2html.min.js", import.meta.url),
+    contentType: "text/javascript; charset=utf-8",
+  }],
+  ["/monitor/assets/diff2html.css", {
+    url: new URL("../node_modules/diff2html/bundles/css/diff2html.min.css", import.meta.url),
+    contentType: "text/css; charset=utf-8",
+  }],
+  ["/monitor/assets/monitor.js", {
+    url: new URL("./monitor/assets/monitor.js", import.meta.url),
+    contentType: "text/javascript; charset=utf-8",
+  }],
+  ["/monitor/assets/monitor.css", {
+    url: new URL("./monitor/assets/monitor.css", import.meta.url),
+    contentType: "text/css; charset=utf-8",
+  }],
+]);
+
 const httpServer = createServer(async (req, res) => {
   const pathname = new URL(req.url || "/", "http://" + (req.headers.host || (host + ":" + port))).pathname;
+  const monitorAsset = req.method === "GET" ? monitorAssets.get(pathname) : null;
+  if (monitorAsset) {
+    try {
+      const content = await readFile(monitorAsset.url);
+      res.writeHead(200, {
+        "content-type": monitorAsset.contentType,
+        "cache-control": "no-store",
+        "x-content-type-options": "nosniff",
+        "content-security-policy": "default-src 'none'; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; img-src 'self' data:",
+      });
+      res.end(content);
+    } catch (error) {
+      console.error("Monitor asset could not be loaded:", error);
+      sendJson(res, 500, { error: "Monitor asset could not be loaded." });
+    }
+    return;
+  }
   if (req.method === "GET" && pathname === "/monitor") {
     try {
       const html = await readFile(new URL("./monitor/index.html", import.meta.url), "utf8");
@@ -82,8 +126,9 @@ const httpServer = createServer(async (req, res) => {
     return;
   }
   if (req.method === "POST" && pathname === "/api/events/clear") {
+    const clearedSessionCount = clearSessionsFromMonitor();
     const clearedCount = clearMonitorEvents();
-    sendJson(res, 200, { ok: true, clearedCount, events: [] });
+    sendJson(res, 200, { ok: true, clearedCount, clearedSessionCount, events: [], sessions: [] });
     return;
   }
   if (req.method === "GET" && pathname === "/api/events/export") {
