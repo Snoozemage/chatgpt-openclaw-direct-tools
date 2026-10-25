@@ -275,7 +275,33 @@ Static checks cover JavaScript and PowerShell syntax plus selected architecture/
 
 These projects overlap with this bridge's ecosystem, but they are not dependencies of this repository. The links are included to clarify neighboring approaches, not to imply that the implementations are interchangeable.
 
-- **[OpenClaw MCP Relay](https://docs.openclaw.ai/plugins/mcp-relay)** — OpenClaw's bundled relay for connecting ChatGPT, Codex, and Claude to a Gateway, including its Control UI and authorized conversation operations. It is the official Gateway-level integration path; this repository instead exposes a separately defined MCP tool surface through OpenAI Secure MCP Tunnel and direct bridge handlers.
-- **[chatgpt-web-agent](https://github.com/AxelHu/chatgpt-web-agent)** — The closest technical neighbor: a local MCP layer using OpenAI Secure MCP Tunnel and OpenClaw-backed tools. Its public surface and architecture differ, including a separate persistent execution runtime and optional Skills, Google Drive, and Feishu integrations; this repository focuses on direct Browser/Computer/Files/runtime wrappers plus bridge-native search, screenshot rendering, and dynamic tool discovery.
-- **[OpenChatX](https://github.com/XiaoPuOuO/openchatx-mcp)** — A broader local agent runtime exposed through one ChatGPT MCP connection, combining computer control, local tools, MCP aggregation, Skills, Rules, Projects, Tasks, and other runtime features. It is an adjacent platform/alternative, not a library this bridge depends on.
-- **[ClawConnect](https://github.com/lambda-curry/clawconnect)** — A task-oriented MCP server and CLI for submitting work to OpenClaw agents and tracking task/session state across clients. It addresses a neighboring integration problem, but its high-level task contract differs from this bridge's focus on exposing individual native tool operations directly.
+- **[OpenClaw MCP Relay](https://docs.openclaw.ai/plugins/mcp-relay)** - OpenClaw's bundled relay for connecting ChatGPT, Codex, and Claude to a Gateway, including its Control UI and authorized conversation operations. It is the official Gateway-level integration path; this repository instead exposes a separately defined MCP tool surface through OpenAI Secure MCP Tunnel and direct bridge handlers.
+- **[chatgpt-web-agent](https://github.com/AxelHu/chatgpt-web-agent)** - The closest technical neighbor: a local MCP layer using OpenAI Secure MCP Tunnel and OpenClaw-backed tools. Its public surface and architecture differ, including a separate persistent execution runtime and optional Skills, Google Drive, and Feishu integrations; this repository focuses on direct Browser/Computer/Files/runtime wrappers plus bridge-native search, screenshot rendering, and dynamic tool discovery.
+- **[OpenChatX](https://github.com/XiaoPuOuO/openchatx-mcp)** - A broader local agent runtime exposed through one ChatGPT MCP connection, combining computer control, local tools, MCP aggregation, Skills, Rules, Projects, Tasks, and other runtime features. It is an adjacent platform/alternative, not a library this bridge depends on.
+- **[ClawConnect](https://github.com/lambda-curry/clawconnect)** - A task-oriented MCP server and CLI for submitting work to OpenClaw agents and tracking task/session state across clients. It addresses a neighboring integration problem, but its high-level task contract differs from this bridge's focus on exposing individual native tool operations directly.
+
+## About Me
+
+I'm currently looking for opportunities in IT and trying to turn what I've learned into real-world experience.
+
+My main interests are Backend Development, Data Analysis, and Machine Learning. I've also had some experience in an AI lab, and I enjoy learning new things by building projects like this one.
+
+Like many people looking for work today, I'm navigating a challenging job market. I'm open to different kinds of IT roles, including areas I haven't worked in before. I may not know everything yet, but I'm willing to learn, put in the effort, and take on new challenges.
+
+If you know of any job opportunities, have advice to share, or think I could contribute to your team, feel free to reach out. I'd genuinely appreciate it.
+
+- **Email:** [via.haidang@gmail.com](mailto:via.haidang@gmail.com)
+- **LinkedIn:** [linkedin.com/in/haidang-nguyen-cs](https://www.linkedin.com/in/haidang-nguyen-cs/)
+- **Facebook:** [facebook.com/Snoozemage](https://www.facebook.com/Snoozemage/)
+
+## Support My Work
+
+I build projects like this in my spare time to explore ideas and learn new technologies.
+
+If you find this project useful, consider giving it a ⭐ or sharing it with others.
+
+If you'd like to support me, you can also buy me a coffee. No pressure at all - even a star or a share means a lot.
+
+☕ **Buy me a coffee:** https://ko-fi.com/snoozemage
+
+If you're in Vietnam and prefer a local bank transfer, you can find the QR code in the posts on my [Ko-fi page](https://ko-fi.com/snoozemage).
