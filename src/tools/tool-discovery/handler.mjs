@@ -1,5 +1,5 @@
 import { agentId, invokeTimeoutMs } from "../../config/runtime.mjs";
-import { gatewayCall } from "../../openclaw-client.mjs";
+import { gatewayCall, invokeGatewayTool } from "../../openclaw-client.mjs";
 import { listNativeRuntimeTools } from "../runtime/handler.mjs";
 import { buildAvailableToolCatalog, describeTool, searchToolCatalog } from "./engine.mjs";
 import { toolDiscoveryDefinitions } from "./schema.mjs";
@@ -78,7 +78,7 @@ function formatDispatchResult(id, result) {
 
 export function createToolDiscoveryHandler({
   loadCatalog = loadAvailableToolCatalog,
-  dispatch = (id, args) => gatewayCall("tools.invoke", { name: id, args, sessionKey, agentId }, invokeTimeoutMs),
+  dispatch = (id, args) => invokeGatewayTool(id, args, sessionKey, invokeTimeoutMs),
 } = {}) {
   return async function handleToolDiscovery(name, args = {}) {
     if (!publicNames.has(name)) return undefined;
