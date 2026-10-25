@@ -1,6 +1,6 @@
 const $=id=>document.getElementById(id);
 let events=[],sessions=[],selectedEvent=null,selectedSession="all",source=null;
-let blockValues=Object.create(null),blockModes=Object.create(null),blockDepths=Object.create(null),diffModes=Object.create(null);
+let blockValues=Object.create(null),blockModes=Object.create(null),blockDepths=Object.create(null),diffModes=Object.create(null),manualDiffModes=Object.create(null);
 function fmtTime(v){try{return v?new Date(v).toLocaleTimeString():"—"}catch{return "—"}}
 function pretty(v){return typeof v==="string"?v:JSON.stringify(v,null,2)}
 function rawValue(v){return v==null?"(empty)":pretty(v)}
@@ -32,8 +32,27 @@ function unifiedDiffText(value,depth=0){
   }
   return null;
 }
+const FILE_MUTATION_TOOLS=new Set(["openclaw_edit","openclaw_write","openclaw_apply_patch"]);
+function structuredPatchDiffText(value,depth=0){
+  if(depth>8||value==null)return null;
+  if(Array.isArray(value)){
+    for(const item of value){const diff=structuredPatchDiffText(item,depth+1);if(diff)return diff}
+    return null;
+  }
+  if(typeof value!=="object")return null;
+  for(const key of ["patch","diff"]){
+    if(key in value){const diff=unifiedDiffText(value[key],depth+1);if(diff)return diff}
+  }
+  for(const item of Object.values(value)){
+    if(item&&typeof item==="object"){const diff=structuredPatchDiffText(item,depth+1);if(diff)return diff}
+  }
+  return null;
+}
+function outputDiffText(value,tool){
+  return FILE_MUTATION_TOOLS.has(tool)?unifiedDiffText(value):structuredPatchDiffText(value);
+}
 function isUnifiedDiff(value){return unifiedDiffText(value)!==null;}
-function payloadMode(key,value,structured=structuredValue(value),diff=isUnifiedDiff(value)){
+function payloadMode(key,value,structured=structuredValue(value),diff=key==="output"?outputDiffText(value,events.find(x=>x.id===selectedEvent)?.tool)!==null:isUnifiedDiff(value)){
   if(diff)return diffMode(key);
   if(structured!==null)return blockModes[key]==="raw"?"raw":"tree";
   return "raw";
@@ -62,15 +81,20 @@ function esc(v){return String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&l
 function copyIcon(){return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/></svg>'}
 function checkIcon(){return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg>'}
 function block(label,key){
-  const value=blockValues[key],structured=structuredValue(value),diff=key==="output"&&isUnifiedDiff(value),mode=payloadMode(key,value,structured,diff);
+  const value=blockValues[key],structured=structuredValue(value),tool=events.find(x=>x.id===selectedEvent)?.tool;
+  const autoDiffText=key==="output"?outputDiffText(value,tool):null;
+  const rawDiffText=key==="output"&&autoDiffText===null?unifiedDiffText(value):null;
+  const manualDiff=rawDiffText!==null&&manualDiffModes[selectedEvent]===true;
+  const diff=autoDiffText!==null||manualDiff,mode=payloadMode(key,value,structured,diff);
   const viewButton=structured!==null&&!diff?'<button class="action" type="button" data-view-block="'+key+'">'+(mode==="raw"?"Tree view":"Raw text")+'</button>':"";
   const depthButton=structured!==null&&!diff&&mode!=="raw"?'<button class="action" type="button" data-depth-block="'+key+'">'+((blockDepths[key]||1)>1?"Collapse":"Expand deeper")+'</button>':"";
   const diffButton=diff?'<button class="action" type="button" data-diff-mode="'+key+'">'+(mode==="side-by-side"?"Inline":"Side by side")+'</button>':"";
-  return '<div class="section"><div class="block-head"><div class="label">'+esc(label)+'</div><div class="block-actions">'+viewButton+depthButton+diffButton+'</div></div><div class="payload-body" id="payload-'+key+'"></div></div>';
+  const manualDiffButton=manualDiff?'<button class="action" type="button" data-raw-output="'+key+'">Raw output</button>':rawDiffText!==null?'<button class="action" type="button" data-open-diff="'+key+'">View diff</button>':"";
+  return '<div class="section"><div class="block-head"><div class="label">'+esc(label)+'</div><div class="block-actions">'+viewButton+depthButton+diffButton+manualDiffButton+'</div></div><div class="payload-body" id="payload-'+key+'"></div></div>';
 }
 function renderBlock(key){
   const body=$("payload-"+key);if(!body)return;
-  const value=blockValues[key],structured=structuredValue(value),diffText=key==="output"?unifiedDiffText(value):null,diff=diffText!==null;
+  const value=blockValues[key],structured=structuredValue(value),tool=events.find(x=>x.id===selectedEvent)?.tool,autoDiffText=key==="output"?outputDiffText(value,tool):null,rawDiffText=key==="output"&&autoDiffText===null?unifiedDiffText(value):null,diffText=autoDiffText??(rawDiffText!==null&&manualDiffModes[selectedEvent]===true?rawDiffText:null),diff=diffText!==null;
   const mode=payloadMode(key,value,structured,diff);
   body.replaceChildren();
   if(diff&&window.Diff2Html&&typeof window.Diff2Html.html==="function"){
@@ -172,6 +196,8 @@ function renderDetail(){
     blockDepths[key]=(blockDepths[key]||1)>1?1:4;
     renderDetail();
   });
+  document.querySelectorAll("[data-open-diff]").forEach(button=>button.onclick=()=>{manualDiffModes[selectedEvent]=true;renderDetail()});
+  document.querySelectorAll("[data-raw-output]").forEach(button=>button.onclick=()=>{manualDiffModes[selectedEvent]=false;renderDetail()});
   document.querySelectorAll("[data-diff-mode]").forEach(button=>button.onclick=()=>{
     const key=button.dataset.diffMode;
     diffModes[key]=diffMode(key)==="side-by-side"?"line-by-line":"side-by-side";

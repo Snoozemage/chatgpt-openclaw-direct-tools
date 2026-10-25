@@ -256,6 +256,16 @@ test("monitor displays the session count only once inside the All sessions card"
   assert.doesNotMatch(html, /cdn\.jsdelivr\.net|unpkg\.com/u);
 });
 
+test("Monitor auto-renders structured file patches and keeps other raw diff output opt-in", async () => {
+  const monitor = await readFile(new URL("../src/monitor/assets/monitor.js", import.meta.url), "utf8");
+  assert.match(monitor, /const FILE_MUTATION_TOOLS=new Set\(\["openclaw_edit","openclaw_write","openclaw_apply_patch"\]\)/u);
+  assert.match(monitor, /return FILE_MUTATION_TOOLS\.has\(tool\)\?unifiedDiffText\(value\):structuredPatchDiffText\(value\)/u);
+  assert.match(monitor, /rawDiffText=key==="output"&&autoDiffText===null\?unifiedDiffText\(value\):null/u);
+  assert.match(monitor, /\}\r?\nfunction renderBlock\(key\)/u);
+  assert.match(monitor, /data-open-diff=/u);
+  assert.match(monitor, /data-raw-output=/u);
+  assert.match(monitor, /manualDiffModes\[selectedEvent\]===true/u);
+});
 test("monitor formatter and diff assets are self-hosted from pinned npm dependencies", async () => {
   const server = await readFile(new URL("../src/server.mjs", import.meta.url), "utf8");
   const packageJson = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
