@@ -55,7 +55,7 @@ const actProperties = {
       additionalProperties: true,
     },
   },
-  stopOnError: boolean("Stop a batch after the first failed step."),
+  stopOnError: boolean("Batch stops at the first failed step by default. Set false to continue with later steps."),
   delayMs: integer("Delay between batch steps in milliseconds."),
   width: integer("Viewport width for resize."),
   height: integer("Viewport height for resize."),
@@ -104,12 +104,12 @@ const properties = {
   dialogId: string("Target dialog ID."),
   accept: boolean("Accept or dismiss a dialog."),
   promptText: string("Text for a prompt dialog."),
-  kind: { type: "string", enum: BROWSER_ACT_KINDS, description: "Operation to perform for action=act." },
+  kind: { type: "string", enum: BROWSER_ACT_KINDS, description: "Operation for action=act. Use kind=batch with an ordered actions array for predictable multi-step interactions in one /act request." },
   ...actProperties,
   timeoutMs: integer("Timeout in milliseconds, where supported by the native action."),
   actions: {
     type: "array",
-    description: "Ordered steps for kind=batch.",
+    description: "Ordered BrowserActRequest steps for action=act, kind=batch, executed sequentially against the same tab in one /act request. Use act kinds such as click, clickCoords, type, press, hover, scrollIntoView, drag, select, fill, resize, wait, evaluate, or close; open, navigate, snapshot, and screenshot are separate actions and cannot be batch entries. Take a fresh snapshot before using refs. Page-changing steps can invalidate refs, so split the batch and snapshot again before dependent actions. If the runtime rejects a batch, split it into individual calls.",
     items: {
       type: "object",
       properties: {
@@ -123,7 +123,7 @@ const properties = {
 
 export const browserToolDefinition = {
   name: "openclaw_browser",
-  description: "Control Chrome through OpenClaw. Use action=open or navigate with targetUrl; if Chrome is not running, use open to launch it and open the requested URL. Use snapshot before page interactions, then pass its refs to action=act.",
+  description: "Control Chrome through OpenClaw. Use action=open or navigate with targetUrl; if Chrome is not running, use open to launch it and open the requested URL. Use snapshot before page interactions, then pass its refs to action=act. For predictable multi-step interactions, use action=act with kind=batch and an ordered actions array when supported; batch entries are act kinds, not open, navigate, snapshot, or screenshot. Page-changing steps can invalidate refs. Batch stops on the first error by default; stopOnError:false continues.",
   annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: true },
   inputSchema: {
     type: "object",

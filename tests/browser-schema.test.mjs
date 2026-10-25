@@ -27,12 +27,14 @@ test("BrowserAct parameter descriptions explain operation-specific inputs", () =
   assert.match(schema.properties.x.description, /clickCoords/i);
   assert.match(schema.properties.startRef.description, /drag/i);
   assert.match(schema.properties.stopOnError.description, /batch/i);
+  assert.match(schema.properties.kind.description, /kind=batch/i);
+  assert.match(schema.properties.actions.description, /BrowserActRequest[\s\S]*one \/act request[\s\S]*snapshot[\s\S]*dependent actions/i);
   assert.match(schema.properties.url.description, /kind=wait/i);
 });
 
 test("Browser description contains only essential usage guidance", () => {
   assert.equal(
     browserToolDefinition.description,
-    "Control Chrome through OpenClaw. Use action=open or navigate with targetUrl; if Chrome is not running, use open to launch it and open the requested URL. Use snapshot before page interactions, then pass its refs to action=act."
+    "Control Chrome through OpenClaw. Use action=open or navigate with targetUrl; if Chrome is not running, use open to launch it and open the requested URL. Use snapshot before page interactions, then pass its refs to action=act. For predictable multi-step interactions, use action=act with kind=batch and an ordered actions array when supported; batch entries are act kinds, not open, navigate, snapshot, or screenshot. Page-changing steps can invalidate refs. Batch stops on the first error by default; stopOnError:false continues."
   );
 });
