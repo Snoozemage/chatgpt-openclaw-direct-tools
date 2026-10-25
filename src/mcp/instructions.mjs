@@ -29,7 +29,7 @@ export function buildMcpInstructions(platform = process.platform) {
   );
 }
 
-export const START_HERE_INSTRUCTIONS = `# OpenClaw ChatGPT Bridge
+export const START_HERE_INSTRUCTIONS = `# OpenClaw ChatGPT Bridge Instructions
 
 ## Scope and operating principles
 - Work autonomously toward the user's requested outcome. Continue through necessary inspection, implementation, validation, and follow-up fixes when they are safe and within scope.
