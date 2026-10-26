@@ -180,6 +180,13 @@ This is OpenClaw configuration, not a bridge setting. Add only trusted, specific
 
 A successful snapshot also registers a short-lived screenshot reference. Call `openclaw_image_render` with its `screenshot_ref` to display it in ChatGPT. The bridge keeps at most 12 screenshots in memory for up to five minutes; references expire on timeout, cache eviction, or bridge restart. Clients that do not support MCP Apps may show only the text fallback.
 
+<p align="center">
+  <a href="docs/images/chatgpt-shot.jpg">
+    <img src="docs/images/chatgpt-shot.jpg" alt="ChatGPT on a phone requesting a desktop screenshot and displaying the captured screen" width="320">
+  </a>
+</p>
+<p align="center"><em>ChatGPT on a phone requesting a desktop screenshot and displaying the captured screen in the conversation.</em></p>
+
 ### Files and local search
 
 The five file tools wrap OpenClaw's native `ls`, `read`, `edit`, `write`, and `apply_patch` tools. `openclaw_edit` is for targeted text replacements; `openclaw_write` intentionally replaces an entire file; `openclaw_apply_patch` uses OpenClaw's patch format. `openclaw_ls` and `openclaw_read` support batches of one to five paths. Read the current file before editing it and inspect the result afterward.
