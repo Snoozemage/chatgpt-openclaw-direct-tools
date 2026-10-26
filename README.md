@@ -4,12 +4,17 @@
 [![OpenClaw Integration](https://img.shields.io/badge/OpenClaw-Integration-FF6B35)](https://openclaw.ai/)
 [![Protocol: MCP](https://img.shields.io/badge/Protocol-MCP-5B5BD6)](https://modelcontextprotocol.io/)
 [![Built for ChatGPT](https://img.shields.io/badge/Built%20for-ChatGPT-74AA9C?logo=openai&logoColor=white)](https://chatgpt.com/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-A local Model Context Protocol (MCP) bridge that gives ChatGPT direct access to selected OpenClaw capabilities and bridge-native utilities. Its current public surface contains 16 MCP tools covering browser and desktop interaction, file operations, project search, command/process management, screenshot rendering, session instructions, and dynamic discovery of eligible native OpenClaw tools.
+**Give ChatGPT direct access to the tools available in your OpenClaw runtime.**
 
-The bridge calls the relevant native tool directly instead of routing routine operations through the OpenClaw main agent. OpenClaw remains authoritative for native schemas, permissions, approvals, browser attachment, and runtime validation.
+Use ChatGPT to work on a local codebase: search files, inspect implementations, edit code, run commands and tests, and review diffs. The bridge also exposes browser, desktop, and other eligible OpenClaw tools through direct wrappers and dynamic tool discovery.
 
-![Local call monitor overview showing active sessions, tool-call history, and invocation details](docs/images/monitor-overview.png)
+Unlike a fixed list of bridge-specific tools, the bridge can discover eligible tools in your current OpenClaw runtime, inspect their actual schemas, and dispatch them through the Gateway. OpenClaw permissions, approvals, and policies remain authoritative.
+
+![Browser automation demo](docs/images/browser_use.gif)
+
+*Browser automation through the bridge.*
 
 ## Capabilities
 
@@ -25,6 +30,31 @@ The bridge calls the relevant native tool directly instead of routing routine op
 | Native tool discovery | `openclaw_tool_search`, `openclaw_tool_describe`, `openclaw_dispatch_action` | Find eligible tools in the current OpenClaw runtime, inspect their actual schemas, and invoke tools that do not already have a direct bridge wrapper. |
 
 This catalog describes the bridge's public interface, not a guarantee that every native OpenClaw capability is available in every installation. Runtime version, installed plugins, node hardware, pairing approvals, Gateway policy, and operating-system permissions all affect availability.
+
+## Quick Start
+
+The shortest path to trying the bridge:
+
+1. **Prepare OpenClaw and the tunnel.** Make sure OpenClaw is installed and configured. Create an OpenAI Secure MCP Tunnel, associate it with your target ChatGPT workspace, and have a Platform API key with **Tunnels Read + Use** permission ready. See [Prepare the OpenAI tunnel](#prepare-the-openai-tunnel) for details.
+2. **Clone and configure** in Windows PowerShell:
+
+   ```powershell
+   git clone https://github.com/Snoozemage/chatgpt-openclaw-direct-tools.git
+   Set-Location chatgpt-openclaw-direct-tools
+   npm run setup
+   ```
+
+   Follow the setup wizard to configure your local OpenClaw paths, ports, tunnel ID, and API key.
+3. **Start the bridge:**
+
+   ```powershell
+   npm start
+   npm run status
+   ```
+
+4. **Connect ChatGPT.** Add a custom MCP server using the **Tunnel** connection, select the same tunnel, then open a conversation and select the plugin. The local call monitor is available at [http://127.0.0.1:19002/monitor](http://127.0.0.1:19002/monitor) with the default port.
+
+For the full setup flow, workspace requirements, troubleshooting notes, and lifecycle details, continue to [Setup and operation](#setup-and-operation).
 
 ## Architecture
 
@@ -61,7 +91,7 @@ For implementation guidance, see [Tool Exposure Guide](docs/TOOL_EXPOSURE_GUIDE.
 
 ### Requirements
 
-- Windows and PowerShell for the currently supported lifecycle scripts.
+- Current setup and lifecycle scripts are written for **Windows/PowerShell**. The MCP server is built with Node.js, but setup and lifecycle support on other operating systems has not yet been validated.
 - Node.js **22.17 or later** and npm.
 - `rg.exe` (ripgrep) on `PATH`, or set `OPENCLAW_RIPGREP_PATH` to its executable path.
 - An installed and configured OpenClaw runtime and Gateway.
@@ -173,6 +203,8 @@ Use the discovery tools when a capability is not already covered by a direct bri
 The bridge refreshes effective tool availability before dispatch. OpenClaw remains responsible for its policy, approvals, hooks, argument validation, and invocation restrictions. Prefer a dedicated bridge wrapper where one exists. Tool discovery does not automatically enable every node or plugin capability.
 
 ## Local call monitor
+
+![Local call monitor overview showing active sessions, tool-call history, and invocation details](docs/images/monitor-overview.png)
 
 The monitor is intended for local development and troubleshooting. It shows running, completed, and failed calls; arguments and output; duration; and diagnostics when available. It supports status filtering, copying a session or individual call as JSON, clearing in-memory history, and removing retained sessions. It retains at most the 200 newest events in memory.
 
