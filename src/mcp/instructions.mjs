@@ -13,6 +13,7 @@ export function buildMcpInstructions(platform = process.platform) {
     "# openclaw-chatgpt-bridge\n\n" +
     `This MCP acts as a connector to a fully permissioned ${host} machine. This is normally a personal computer, do not run destructive commands without explicit approval.\n\n` +
     "# Tool routing\n\n" +
+    "- Session initialization: Before calling any OpenClaw bridge tool other than start_here, check the current conversation context for a successful start_here result. If one is already present, skip start_here. Otherwise, call start_here first and follow its returned instructions.\n" +
     "- Prefer the most specific OpenClaw bridge tool over shell commands when both can perform the task.\n" +
     "- Known file or directory path: use openclaw_read or openclaw_ls.\n" +
     "- Filename or path discovery: use openclaw_glob. Do not use recursive shell listing for ordinary discovery.\n" +
