@@ -1,4 +1,4 @@
-# ChatGPT OpenClaw Direct Tools Bridge
+# OpenClaw Direct Tools for ChatGPT
 
 [![Node.js 22.17+](https://img.shields.io/badge/Node.js-22.17%2B-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
 [![OpenClaw Integration](https://img.shields.io/badge/OpenClaw-Integration-FF6B35)](https://openclaw.ai/)
@@ -39,8 +39,8 @@ The shortest path to trying the bridge:
 2. **Clone and configure** in Windows PowerShell:
 
    ```powershell
-   git clone https://github.com/Snoozemage/chatgpt-openclaw-direct-tools.git
-   Set-Location chatgpt-openclaw-direct-tools
+   git clone https://github.com/Snoozemage/openclaw-direct-tools-for-chatgpt.git
+   Set-Location openclaw-direct-tools-for-chatgpt
    npm run setup
    ```
 
@@ -224,7 +224,7 @@ When a tool returns a change diff, the monitor can render additions and removals
 ## Repository structure
 
 ```text
-chatgpt-openclaw-direct-tools/
+openclaw-direct-tools-for-chatgpt/
 ├── src/
 │   ├── config/
 │   │   └── runtime.mjs

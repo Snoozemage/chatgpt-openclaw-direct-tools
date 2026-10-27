@@ -62,7 +62,7 @@ try {
     $tunnelIsReady = $tunnel -and (($tunnel -is [string] -and $tunnel.Trim() -eq 'ready') -or $tunnel.status -eq 'ready')
 
     Write-Host ''
-    Write-Host 'ChatGPT OpenClaw Direct Tools - Status' -ForegroundColor Cyan
+    Write-Host 'OpenClaw Direct Tools for ChatGPT - Status' -ForegroundColor Cyan
     [pscustomobject]@{Component='OpenClaw Gateway';Status=$(if ($gatewayOk) {'reachable'} else {'offline'});Endpoint=('127.0.0.1:' + $cfg.gatewayPort)} | Format-Table -AutoSize
     [pscustomobject]@{Component='MCP bridge';Status=$(if ($bridge -and $bridge.ok) {'running'} else {'offline'});Endpoint=$bridgeUrl} | Format-Table -AutoSize
     [pscustomobject]@{Component='Overview dashboard';Status=$(if ($bridge -and $bridge.ok) {'available'} else {'offline'});Endpoint=($bridgeUrl + '/monitor')} | Format-Table -AutoSize

@@ -2,7 +2,7 @@
 
 ## Purpose and source of truth
 
-This guide defines how to add, change, validate, and remove public MCP tools in the ChatGPT OpenClaw Direct Tools Bridge. It replaces the former implementation plan, whose initial-state description and next-step roadmap no longer reflected the repository.
+This guide defines how to add, change, validate, and remove public MCP tools in the OpenClaw Direct Tools for ChatGPT bridge. It replaces the former implementation plan, whose initial-state description and next-step roadmap no longer reflected the repository.
 
 The code is the source of truth for the exposed tool surface:
 
