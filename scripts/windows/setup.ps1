@@ -15,6 +15,8 @@ $AppHome = Join-Path $env:LOCALAPPDATA 'OpenClawChatGPTBridge'
 $ConfigFile = Join-Path $AppHome 'config.json'
 $SecretDir = Join-Path $AppHome 'secrets'
 $SecretFile = Join-Path $SecretDir 'control-plane-api-key.txt'
+$CredentialTarget = 'OpenClawChatGPTBridge/CONTROL_PLANE_API_KEY'
+. (Join-Path $PSScriptRoot 'credential-store.ps1')
 $ProfileDir = Join-Path $AppHome 'tunnel-profiles'
 $ProfileName = 'openclaw-chatgpt-bridge'
 $ProfileFile = Join-Path $ProfileDir ($ProfileName + '.yaml')
@@ -44,19 +46,34 @@ function Set-CurrentUserOnlyAcl([string]$Path, [bool]$IsDirectory = $false) {
 function Save-ApiKey {
     Write-Host 'Paste the OpenAI runtime API key when prompted. Input is hidden and the key will not be printed.' -ForegroundColor Yellow
     $secure = Read-Host 'Runtime API key' -AsSecureString
-    if ($secure.Length -lt 20) { throw 'The API key looks too short. No key was saved.' }
-    $ptr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)
+    if ($secure.Length -lt 20) { $secure.Dispose(); throw 'The API key looks too short. No key was saved.' }
+    $ptr = [IntPtr]::Zero
+    $plain = $null
     try {
+        $ptr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)
         $plain = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($ptr).Trim()
         if ($plain.Length -lt 20 -or $plain -match '\s') { throw 'The API key appears invalid; no key was saved.' }
-        [IO.File]::WriteAllText($SecretFile, $plain, [Text.UTF8Encoding]::new($false))
+        [OpenClawBridge.WindowsCredentialStore]::Save($CredentialTarget, $plain)
+        $saved = [OpenClawBridge.WindowsCredentialStore]::Load($CredentialTarget)
+        if ($saved -cne $plain) { throw 'Windows Credential Manager verification failed; the API key was not accepted as saved.' }
+        Write-Host 'Runtime key saved and verified in Windows Credential Manager.' -ForegroundColor Green
+        return $saved
     }
     finally {
         if ($ptr -ne [IntPtr]::Zero) { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr) }
+        $secure.Dispose()
         $plain = $null
     }
-    Set-CurrentUserOnlyAcl -Path $SecretFile
-    Write-Host "Runtime key saved to a user-restricted file: $SecretFile" -ForegroundColor Green
+}
+function Remove-LegacyApiKeyFile {
+    if (-not (Test-Path -LiteralPath $SecretFile -PathType Leaf)) { return }
+    Remove-Item -LiteralPath $SecretFile -Force -ErrorAction Stop
+    $legacyDirectory = Split-Path -Parent $SecretFile
+    if (Test-Path -LiteralPath $legacyDirectory -PathType Container) {
+        $remaining = @(Get-ChildItem -LiteralPath $legacyDirectory -Force)
+        if ($remaining.Count -eq 0) { Remove-Item -LiteralPath $legacyDirectory -Force -ErrorAction SilentlyContinue }
+    }
+    Write-Host 'Removed the legacy plaintext API-key file after verifying the Credential Manager entry.' -ForegroundColor Green
 }
 function Get-OpenAiTunnelClient([string]$ExistingPath) {
     if ($ExistingPath -and (Test-Path -LiteralPath $ExistingPath -PathType Leaf)) { return (Resolve-Path -LiteralPath $ExistingPath).Path }
@@ -137,8 +154,7 @@ if ($ValidateOnly) {
 }
 
 Write-Step 'Prepare local configuration directory'
-New-Item -ItemType Directory -Force -Path $AppHome, $SecretDir, $ProfileDir, $LogDir | Out-Null
-Set-CurrentUserOnlyAcl -Path $SecretDir -IsDirectory $true
+New-Item -ItemType Directory -Force -Path $AppHome, $ProfileDir, $LogDir | Out-Null
 $config = $null
 if (Test-Path -LiteralPath $ConfigFile) {
     try { $config = Get-Content -LiteralPath $ConfigFile -Raw | ConvertFrom-Json } catch { Write-Warning 'Existing local config is invalid; a new configuration will be generated.' }
@@ -184,7 +200,8 @@ $ripgrepCommand = if ($env:OPENCLAW_RIPGREP_PATH) {
 }
 if (-not $ripgrepCommand) { throw 'ripgrep (rg.exe) is required. Install it and add it to PATH, or set OPENCLAW_RIPGREP_PATH to its full path.' }
 $ripgrepPath = if ($ripgrepCommand.Source) { $ripgrepCommand.Source } else { $ripgrepCommand.FullName }
-$ripgrepVersion = (& $ripgrepPath --version 2>&1 | Select-Object -First 1 | Out-String).Trim()
+$ripgrepVersionOutput = (& $ripgrepPath --version 2>&1 | Out-String).Trim()
+$ripgrepVersion = ($ripgrepVersionOutput -split '\r?\n')[0].Trim()
 if ($LASTEXITCODE -ne 0 -or $ripgrepVersion -notmatch '^ripgrep ') { throw "Could not run ripgrep at $ripgrepPath." }
 Write-Host "Using $ripgrepVersion at $ripgrepPath" -ForegroundColor Green
 
@@ -228,16 +245,63 @@ $tunnelClientPath = Get-OpenAiTunnelClient ([string]$config.tunnelClientPath)
 $clientVersion = (& $tunnelClientPath --version 2>&1 | Out-String).Trim()
 Write-Host "Using $clientVersion at $tunnelClientPath"
 
-if ((Test-Path -LiteralPath $SecretFile) -and (Get-Item -LiteralPath $SecretFile).Length -gt 20) {
-    $reuse = Read-Default 'Reuse the saved runtime API key? (Y/N)' 'Y'
-    if ($reuse -notmatch '^(?i)y(es)?$') { Save-ApiKey }
-} else { Save-ApiKey }
-Set-CurrentUserOnlyAcl -Path $SecretFile
+$storedApiKey = [OpenClawBridge.WindowsCredentialStore]::Load($CredentialTarget)
+$removeLegacyApiKeyFile = $false
+if (Test-Path -LiteralPath $SecretFile -PathType Leaf) {
+    $legacyApiKey = [IO.File]::ReadAllText($SecretFile).Trim()
+    if ($legacyApiKey.Length -lt 20 -or $legacyApiKey -match '\s') {
+        throw "The legacy plaintext key file is invalid and was preserved: $SecretFile. Resolve it manually before rerunning setup."
+    }
+
+    if ([string]::IsNullOrWhiteSpace($storedApiKey)) {
+        [OpenClawBridge.WindowsCredentialStore]::Save($CredentialTarget, $legacyApiKey)
+        $verifiedApiKey = [OpenClawBridge.WindowsCredentialStore]::Load($CredentialTarget)
+        if ($verifiedApiKey -cne $legacyApiKey) { throw "Migration verification failed; the legacy plaintext key file was preserved: $SecretFile" }
+        $storedApiKey = $verifiedApiKey
+        Write-Host 'Migrated the legacy API key into Windows Credential Manager.' -ForegroundColor Green
+        $removeLegacyApiKeyFile = $true
+    } elseif ($storedApiKey -ceq $legacyApiKey) {
+        $removeLegacyApiKeyFile = $true
+    } else {
+        $replaceStored = Read-Default 'Credential Manager contains a different key. Replace it with the legacy file key? (Y/N)' 'N'
+        if ($replaceStored -match '^(?i)y(es)?$') {
+            [OpenClawBridge.WindowsCredentialStore]::Save($CredentialTarget, $legacyApiKey)
+            $verifiedApiKey = [OpenClawBridge.WindowsCredentialStore]::Load($CredentialTarget)
+            if ($verifiedApiKey -cne $legacyApiKey) { throw "Credential Manager verification failed; the legacy plaintext key file was preserved: $SecretFile" }
+            $storedApiKey = $verifiedApiKey
+            $removeLegacyApiKeyFile = $true
+        } else {
+            $keepStored = Read-Default 'Keep the Credential Manager key and remove the legacy plaintext file? (Y/N)' 'N'
+            if ($keepStored -match '^(?i)y(es)?$') {
+                $removeLegacyApiKeyFile = $true
+            } else {
+                throw "The Credential Manager entry and legacy plaintext key differ. Neither was changed; resolve the mismatch and rerun setup. Legacy file: $SecretFile"
+            }
+        }
+    }
+}
+
+if ([string]::IsNullOrWhiteSpace($storedApiKey)) {
+    $apiKey = Save-ApiKey
+} else {
+    $reuse = Read-Default 'Reuse the saved runtime API key from Windows Credential Manager? (Y/N)' 'Y'
+    if ($reuse -match '^(?i)y(es)?$') { $apiKey = $storedApiKey } else { $apiKey = Save-ApiKey }
+}
+$storedApiKey = $null
 
 Write-Step 'Generate Secure MCP Tunnel profile'
 New-Item -ItemType Directory -Force -Path $ProfileDir | Out-Null
-& $tunnelClientPath init --profile $ProfileName --profile-dir $ProfileDir --tunnel-id $TunnelId --mcp-server-url "http://127.0.0.1:$BridgePort/mcp" --control-plane-api-key-ref "file:$SecretFile" --health-listen-addr "127.0.0.1:$TunnelHealthPort" --force
-if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $ProfileFile)) { throw 'Could not create the tunnel-client profile.' }
+$previousApiKeyEnvironment = [Environment]::GetEnvironmentVariable('CONTROL_PLANE_API_KEY', 'Process')
+try {
+    $env:CONTROL_PLANE_API_KEY = $apiKey
+    & $tunnelClientPath init --profile $ProfileName --profile-dir $ProfileDir --tunnel-id $TunnelId --mcp-server-url "http://127.0.0.1:$BridgePort/mcp" --control-plane-api-key-ref 'env:CONTROL_PLANE_API_KEY' --health-listen-addr "127.0.0.1:$TunnelHealthPort" --force
+    $initExit = $LASTEXITCODE
+} finally {
+    if ($null -eq $previousApiKeyEnvironment) { Remove-Item Env:CONTROL_PLANE_API_KEY -ErrorAction SilentlyContinue }
+    else { $env:CONTROL_PLANE_API_KEY = $previousApiKeyEnvironment }
+}
+if ($initExit -ne 0 -or -not (Test-Path -LiteralPath $ProfileFile)) { throw 'Could not create the tunnel-client profile.' }
+if ($removeLegacyApiKeyFile) { Remove-LegacyApiKeyFile }
 
 $newConfig = [ordered]@{
     schemaVersion = 1
@@ -255,7 +319,7 @@ $newConfig = [ordered]@{
     tunnelProfilePath = $ProfileFile
     tunnelProfileDir = $ProfileDir
     tunnelHealthPort = $TunnelHealthPort
-    apiKeyPath = $SecretFile
+    credentialTarget = $CredentialTarget
     repoPath = $RepoRoot
     logDir = $LogDir
     configuredAt = (Get-Date).ToString('o')
@@ -266,8 +330,16 @@ Set-CurrentUserOnlyAcl -Path $ConfigFile
 Write-Step 'Validate local runtime configuration'
 & $NodePath --check (Join-Path $RepoRoot 'src\server.mjs')
 if ($LASTEXITCODE -ne 0) { throw 'Bridge JavaScript syntax check failed.' }
-& $tunnelClientPath doctor --config $ProfileFile --control-plane.api-key "file:$SecretFile" --explain
-$doctorExit = $LASTEXITCODE
+$previousApiKeyEnvironment = [Environment]::GetEnvironmentVariable('CONTROL_PLANE_API_KEY', 'Process')
+try {
+    $env:CONTROL_PLANE_API_KEY = $apiKey
+    & $tunnelClientPath doctor --config $ProfileFile --control-plane.api-key 'env:CONTROL_PLANE_API_KEY' --explain
+    $doctorExit = $LASTEXITCODE
+} finally {
+    if ($null -eq $previousApiKeyEnvironment) { Remove-Item Env:CONTROL_PLANE_API_KEY -ErrorAction SilentlyContinue }
+    else { $env:CONTROL_PLANE_API_KEY = $previousApiKeyEnvironment }
+    $apiKey = $null
+}
 if ($doctorExit -ne 0) { Write-Warning 'tunnel-client doctor reported a problem; the local configuration was saved so it can be corrected with status.ps1 and the README troubleshooting section.' }
 
 Write-Host "`nSetup saved. Local configuration: $ConfigFile" -ForegroundColor Green

@@ -59,4 +59,23 @@ if (-not $logonStartValid) { throw 'Logon startup contract failed: start-on-logo
 if (-not $gatewayStopValid) { throw 'Gateway shutdown contract failed: stop.ps1 must stop only the process recorded in gateway.pid after command identity validation.' }
 if (-not $bridgeSupervisorValid -or -not $bridgeRestartValid) { throw 'Bridge lifecycle contract failed: Monitor restart must exit the supervised bridge and let its external supervisor restart only that child.' }
 Write-Host 'Checking lifecycle contract: Gateway ownership, bridge supervisor restart, diagnostic logon wrapper, and ownership-aware stop are present.'
+
+$setupScript = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts\windows\setup.ps1') -Raw
+$credentialModule = Join-Path $repoRoot 'scripts\windows\credential-store.ps1'
+$credentialInterop = Join-Path $repoRoot 'scripts\windows\WindowsCredentialStore.cs'
+$credentialStorageValid = (Test-Path -LiteralPath $credentialModule) -and
+    (Test-Path -LiteralPath $credentialInterop) -and
+    $setupScript.Contains('WindowsCredentialStore]::Save') -and
+    $setupScript.Contains("--control-plane-api-key-ref 'env:CONTROL_PLANE_API_KEY'") -and
+    -not $setupScript.Contains('WriteAllText($SecretFile') -and
+    -not $setupScript.Contains('file:$SecretFile') -and
+    $startScript.Contains('WindowsCredentialStore]::Load') -and
+    $startScript.Contains('$env:CONTROL_PLANE_API_KEY = $tunnelApiKey') -and
+    -not $startScript.Contains('apiKeyPath') -and
+    -not $startScript.Contains('--control-plane.api-key')
+if (-not $credentialStorageValid) {
+    throw 'Credential storage contract failed: setup/start must use Windows Credential Manager and env:CONTROL_PLANE_API_KEY without writing or requiring a plaintext API-key file.'
+}
+Write-Host 'Checking credential contract: API key is stored in Windows Credential Manager and passed through the tunnel-client process environment.'
+
 Write-Host ("All checks passed: " + $files.Count + " JavaScript module(s), " + $scriptFiles.Count + " PowerShell script(s).")

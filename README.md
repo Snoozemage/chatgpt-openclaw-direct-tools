@@ -9,6 +9,8 @@
 
 **Give ChatGPT direct access to the tools available in your OpenClaw runtime.**
 
+**Platform status:** Windows is the currently tested setup. Linux and macOS support has not yet been validated. Contributions and testing reports for additional platforms are welcome. See [Contributing](CONTRIBUTING.md).
+
 Use ChatGPT to work on a local codebase: search files, inspect implementations, edit code, run commands and tests, and review diffs. The bridge also exposes browser, desktop, and other eligible OpenClaw tools through direct wrappers and dynamic tool discovery.
 
 Unlike a fixed list of bridge-specific tools, the bridge can discover eligible tools in your current OpenClaw runtime, inspect their actual schemas, and dispatch them through the Gateway. OpenClaw permissions, approvals, and policies remain authoritative.
@@ -34,7 +36,7 @@ This catalog describes the bridge's public interface, not a guarantee that every
 
 ## Quick Start
 
-**Platform status:** Windows is the currently tested setup. Linux and macOS support has not yet been validated. Contributions and testing reports for additional platforms are welcome. See [Contributing](CONTRIBUTING.md).
+> **Note:** The steps below are for Windows; Linux and macOS have not yet been validated.
 
 The shortest path to trying the bridge:
 
@@ -124,7 +126,9 @@ The default local application directory is:
 %LOCALAPPDATA%\OpenClawChatGPTBridge\
 ```
 
-It contains the generated configuration, user-restricted API-key file, tunnel profile, and runtime logs. Keep these files out of version control.
+It contains the generated configuration, tunnel profile, and runtime logs. The tunnel runtime API key is stored in Windows Credential Manager and is not written to a plaintext key file by the current setup flow. Keep generated configuration, profiles, and logs out of version control.
+
+On existing installations, rerun `npm run setup` once to migrate the old key file. Setup verifies the Credential Manager entry before removing that file. Normal file deletion cannot guarantee secure erasure of historical disk copies; rotate the key if you suspect prior exposure.
 
 ### Start, inspect, and stop
 
@@ -261,7 +265,9 @@ openclaw-direct-tools-for-chatgpt/
 │       ├── status.ps1
 │       ├── start-on-logon.ps1
 │       ├── start-monitor.ps1
-│       └── bridge-supervisor.ps1
+│       ├── bridge-supervisor.ps1
+│       ├── credential-store.ps1
+│       └── WindowsCredentialStore.cs
 ├── tests/
 │   ├── browser-recovery.test.mjs
 │   ├── browser-schema.test.mjs
@@ -278,13 +284,15 @@ openclaw-direct-tools-for-chatgpt/
 │   ├── tool-annotations.test.mjs
 │   ├── tool-discovery.test.mjs
 │   ├── check-syntax.ps1
-│   └── smoke.ps1
+│   ├── smoke.ps1
+│   └── windows-credential-store.ps1
 ├── docs/
 │   ├── GATEWAY_NODE_COMMAND_REFERENCE.md
 │   └── TOOL_EXPOSURE_GUIDE.md
 ├── package.json
 ├── README.md
-└── CONTRIBUTING.md
+├── CONTRIBUTING.md
+└── THIRD_PARTY_NOTICES.md
 ```
 
 The public MCP schemas are assembled in `src/mcp/tool-definitions.mjs`; handlers are routed through `src/mcp/tool-dispatcher.mjs`. Each feature family lives under `src/tools/<feature>/`. `docs/TOOL_EXPOSURE_GUIDE.md` describes how to add, change, validate, and remove public tools.
@@ -296,7 +304,10 @@ Run static checks and unit tests:
 ```powershell
 npm run check
 npm run test:unit
+npm run test:credential-store
 ```
+
+The Credential Manager test creates a temporary test-only entry, verifies save/read/overwrite/delete behavior, and removes it. It does not read or modify the project’s real API-key entry.
 
 For an integration smoke test against a running local bridge and Gateway:
 
@@ -310,6 +321,7 @@ Static checks cover JavaScript and PowerShell syntax plus selected architecture/
 
 - **Keep endpoints local.** The bridge and monitor default to loopback. Do not expose them to an untrusted network.
 - **Keep secrets out of Git.** API keys, generated runtime configuration, tunnel profiles, logs, and process state belong outside the repository.
+- **Use the OS credential store for runtime keys.** Windows setup stores the tunnel API key in Credential Manager and passes it to `tunnel-client` through the child process environment. This protects the key at rest better than a plaintext file, but does not protect it from malicious code running as the same user while the tunnel process is active.
 - **Treat monitor output as sensitive.** Tool arguments and results may contain private page or machine data, even with best-effort redaction.
 - **Respect native permissions.** Direct invocation is not a permission bypass. OpenClaw policy, tool availability, node pairing/approval, browser attachment, and OS permissions remain authoritative.
 - **Use incremental tool exposure.** Inspect live schemas before invoking discovered tools. Preserve native errors instead of manufacturing success, and obtain approval before destructive or externally consequential actions unless clearly authorized.

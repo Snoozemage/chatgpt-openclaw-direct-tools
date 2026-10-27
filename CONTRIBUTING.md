@@ -19,6 +19,7 @@ On the currently tested Windows/PowerShell setup, run these from the repository 
 ```powershell
 npm run check
 npm run test:unit
+npm run test:credential-store
 ```
 
 For an integration smoke test, use a locally configured and running bridge and Gateway:

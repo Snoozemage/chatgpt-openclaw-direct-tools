@@ -10,7 +10,8 @@
     "status": "powershell -NoProfile -ExecutionPolicy Bypass -File .\\scripts\\windows\\status.ps1",
     "test": "powershell -NoProfile -ExecutionPolicy Bypass -File .\\tests\\smoke.ps1",
     "test:unit": "node --test .\\tests\\*.test.mjs",
-    "check": "powershell -NoProfile -ExecutionPolicy Bypass -File .\\tests\\check-syntax.ps1"
+    "check": "powershell -NoProfile -ExecutionPolicy Bypass -File .\\tests\\check-syntax.ps1",
+    "test:credential-store": "powershell -NoProfile -ExecutionPolicy Bypass -File .\\tests\\windows-credential-store.ps1"
   },
   "engines": {
     "node": ">=22.17"

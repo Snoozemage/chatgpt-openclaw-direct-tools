@@ -5,6 +5,8 @@ $ErrorActionPreference = 'Stop'
 $RepoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
 $AppHome = Join-Path $env:LOCALAPPDATA 'OpenClawChatGPTBridge'
 $ConfigFile = Join-Path $AppHome 'config.json'
+$DefaultCredentialTarget = 'OpenClawChatGPTBridge/CONTROL_PLANE_API_KEY'
+. (Join-Path $PSScriptRoot 'credential-store.ps1')
 $GatewayPidFile = Join-Path $AppHome 'gateway.pid'
 $BridgePidFile = Join-Path $AppHome 'bridge.pid'
 $BridgeSupervisorPidFile = Join-Path $AppHome 'bridge-supervisor.pid'
@@ -14,7 +16,7 @@ $TunnelPidFile = Join-Path $AppHome 'tunnel-client.pid'
 function Read-LocalConfig {
     if (-not (Test-Path -LiteralPath $ConfigFile)) { throw 'Run setup.ps1 before start.ps1.' }
     $script:Cfg = Get-Content -LiteralPath $ConfigFile -Raw | ConvertFrom-Json
-    foreach ($key in @('openclawConfigPath','openclawCliPath','nodePath','tunnelClientPath','tunnelProfilePath','apiKeyPath','bridgePort','gatewayPort','tunnelHealthPort')) {
+    foreach ($key in @('openclawConfigPath','openclawCliPath','nodePath','tunnelClientPath','tunnelProfilePath','bridgePort','gatewayPort','tunnelHealthPort')) {
         if ($null -eq $script:Cfg.$key -or [string]::IsNullOrWhiteSpace([string]$script:Cfg.$key)) { throw "Local config is missing '$key'. Re-run setup.ps1." }
     }
 }
@@ -79,6 +81,22 @@ $env:OPENCLAW_BRIDGE_PORT = [string]$Cfg.bridgePort
 $env:OPENCLAW_BRIDGE_AGENT = if ($Cfg.agentId) { [string]$Cfg.agentId } else { 'main' }
 $env:OPENCLAW_GATEWAY_PORT = [string]$Cfg.gatewayPort
 $env:OPENCLAW_BRIDGE_INVOKE_TIMEOUT_MS = '120000'
+
+# Fail before starting Gateway/bridge if the tunnel needs to start but no credential is stored.
+$tunnelHealth = 'http://127.0.0.1:' + $Cfg.tunnelHealthPort
+$initialTunnelReady = Get-Json ($tunnelHealth + '/readyz')
+$initialTunnelHealthy = $initialTunnelReady -and (($initialTunnelReady -is [string] -and $initialTunnelReady.Trim() -eq 'ready') -or $initialTunnelReady.status -eq 'ready')
+$tunnelApiKey = $null
+if (-not $initialTunnelHealthy) {
+    if (Test-Port ([int]$Cfg.tunnelHealthPort)) {
+        throw "Tunnel health port $($Cfg.tunnelHealthPort) is occupied but is not reporting ready. Resolve the conflict or update setup."
+    }
+    $credentialTarget = if ([string]::IsNullOrWhiteSpace([string]$Cfg.credentialTarget)) { $DefaultCredentialTarget } else { [string]$Cfg.credentialTarget }
+    $tunnelApiKey = [OpenClawBridge.WindowsCredentialStore]::Load($credentialTarget)
+    if ([string]::IsNullOrWhiteSpace($tunnelApiKey)) {
+        throw 'The Secure MCP Tunnel API key is not available in Windows Credential Manager. Run npm run setup to store or migrate it before starting the stack.'
+    }
+}
 
 # Start Gateway directly when nothing is listening; do not take over an existing service/process.
 $gatewayPort = [int]$Cfg.gatewayPort
@@ -173,19 +191,32 @@ if (-not $managedHealth -or -not $managedHealth.ok -or $managedBridgeId -le 0 -o
 }
 Write-Host "MCP bridge supervised at $base (PID $managedBridgeId; supervisor PID $($supervisor.ProcessId))." -ForegroundColor Green
 
-$tunnelHealth = 'http://127.0.0.1:' + $Cfg.tunnelHealthPort
 $ready = Get-Json ($tunnelHealth + '/readyz')
 if ($ready -and (($ready -is [string] -and $ready.Trim() -eq 'ready') -or $ready.status -eq 'ready')) {
     Write-Host 'Tunnel client is already ready.' -ForegroundColor Green
 } else {
     if (Test-Port ([int]$Cfg.tunnelHealthPort)) { throw "Tunnel health port $($Cfg.tunnelHealthPort) is occupied but is not reporting ready. Resolve the conflict or update setup." }
     Write-Host 'Starting Secure MCP Tunnel client ...'
+    if ([string]::IsNullOrWhiteSpace($tunnelApiKey)) {
+        $credentialTarget = if ([string]::IsNullOrWhiteSpace([string]$Cfg.credentialTarget)) { $DefaultCredentialTarget } else { [string]$Cfg.credentialTarget }
+        $tunnelApiKey = [OpenClawBridge.WindowsCredentialStore]::Load($credentialTarget)
+    }
+    if ([string]::IsNullOrWhiteSpace($tunnelApiKey)) {
+        throw 'The Secure MCP Tunnel API key is not available in Windows Credential Manager. Run npm run setup to store or migrate it before starting the tunnel.'
+    }
     $out = Join-Path $LogDir 'tunnel-client.stdout.log'
     $err = Join-Path $LogDir 'tunnel-client.stderr.log'
     $profileArg = '"' + [string]$Cfg.tunnelProfilePath + '"'
-    $keyArg = '"file:' + [string]$Cfg.apiKeyPath + '"'
-    $tunnelArgs = 'run --config ' + $profileArg + ' --control-plane.api-key ' + $keyArg
-    $proc = Start-LoggedProcess -FilePath ([string]$Cfg.tunnelClientPath) -Arguments $tunnelArgs -OutFile $out -ErrFile $err -WorkingDirectory $RepoRoot
+    $tunnelArgs = 'run --config ' + $profileArg
+    $previousApiKeyEnvironment = [Environment]::GetEnvironmentVariable('CONTROL_PLANE_API_KEY', 'Process')
+    try {
+        $env:CONTROL_PLANE_API_KEY = $tunnelApiKey
+        $proc = Start-LoggedProcess -FilePath ([string]$Cfg.tunnelClientPath) -Arguments $tunnelArgs -OutFile $out -ErrFile $err -WorkingDirectory $RepoRoot
+    } finally {
+        if ($null -eq $previousApiKeyEnvironment) { Remove-Item Env:CONTROL_PLANE_API_KEY -ErrorAction SilentlyContinue }
+        else { $env:CONTROL_PLANE_API_KEY = $previousApiKeyEnvironment }
+        $tunnelApiKey = $null
+    }
     Set-Content -LiteralPath $TunnelPidFile -Value $proc.Id -Encoding ASCII
     $ready = Wait-Json ($tunnelHealth + '/readyz') 45
     if (-not $ready -or -not (($ready -is [string] -and $ready.Trim() -eq 'ready') -or $ready.status -eq 'ready')) {
