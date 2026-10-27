@@ -34,6 +34,8 @@ This catalog describes the bridge's public interface, not a guarantee that every
 
 ## Quick Start
 
+**Platform status:** Windows is the currently tested setup. Linux and macOS support has not yet been validated. Contributions and testing reports for additional platforms are welcome. See [Contributing](CONTRIBUTING.md).
+
 The shortest path to trying the bridge:
 
 1. **Prepare OpenClaw and the tunnel.** Make sure OpenClaw is installed and configured. Create an OpenAI Secure MCP Tunnel, associate it with your target ChatGPT workspace, and have a Platform API key with **Tunnels Read + Use** permission ready. See [Prepare the OpenAI tunnel](#prepare-the-openai-tunnel) for details.
@@ -281,7 +283,8 @@ openclaw-direct-tools-for-chatgpt/
 │   ├── GATEWAY_NODE_COMMAND_REFERENCE.md
 │   └── TOOL_EXPOSURE_GUIDE.md
 ├── package.json
-└── README.md
+├── README.md
+└── CONTRIBUTING.md
 ```
 
 The public MCP schemas are assembled in `src/mcp/tool-definitions.mjs`; handlers are routed through `src/mcp/tool-dispatcher.mjs`. Each feature family lives under `src/tools/<feature>/`. `docs/TOOL_EXPOSURE_GUIDE.md` describes how to add, change, validate, and remove public tools.
