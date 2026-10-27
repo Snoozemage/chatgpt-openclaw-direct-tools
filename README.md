@@ -95,7 +95,7 @@ For implementation guidance, see [Tool Exposure Guide](docs/TOOL_EXPOSURE_GUIDE.
 - Node.js **22.17 or later** and npm.
 - `rg.exe` (ripgrep) on `PATH`, or set `OPENCLAW_RIPGREP_PATH` to its executable path.
 - An installed and configured OpenClaw runtime and Gateway.
-- An OpenAI Secure MCP Tunnel created in Platform and an **OpenAI Platform API key for `tunnel-client`** with Tunnels Read + Use permission. You also need permission to add a custom MCP server in the target ChatGPT workspace.
+- An OpenAI Secure MCP Tunnel created in Platform and an **OpenAI Platform API key for `tunnel-client`** with Tunnels Read + Use permission. You also need a ChatGPT account/workspace that can add a custom MCP server. The project maintainer has verified that this bridge connects successfully on a **ChatGPT Free** account.
 
 ### Prepare the OpenAI tunnel
 
@@ -142,7 +142,7 @@ The bridge normally listens on `http://127.0.0.1:19002` and the Gateway on port 
 3. Configure authentication if the connection form requires it, review the risk warning, acknowledge it, and choose **Create as a plugin**.
 4. Review the discovered tool list and metadata. Install the resulting plugin, start a new conversation, type `@`, select the plugin, and test a low-risk operation.
 
-Adding the plugin is separate from running the local bridge and tunnel client. If the tunnel is not listed, verify that it is associated with the target ChatGPT workspace and that your Platform account has Tunnels Read + Use. Custom MCP server connections and full MCP support are currently documented for ChatGPT Business and Enterprise/Edu on the web; workspace permissions also apply. Check the current [ChatGPT custom MCP server requirements](https://help.openai.com/en/articles/12584461-connecting-custom-mcp-servers-in-chatgpt) before setup. See [Add a custom MCP server to ChatGPT](https://developers.openai.com/api/docs/guides/custom-mcp-server) for the connection flow.
+Adding the plugin is separate from running the local bridge and tunnel client. If the tunnel is not listed, verify that it is associated with the target ChatGPT workspace and that your Platform account has Tunnels Read + Use. The project maintainer has successfully connected this bridge using ChatGPT Free. See the [ChatGPT custom MCP server guide](https://help.openai.com/en/articles/12584461-connecting-custom-mcp-servers-in-chatgpt) for details.
 
 For Windows sign-in startup, `scripts/windows/start-on-logon.ps1` is the scheduled-task entry point. `scripts/windows/bridge-supervisor.ps1` supervises bridge restarts. `scripts/windows/start-monitor.ps1` is retained as a compatibility alias for the combined launcher.
 
