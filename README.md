@@ -5,6 +5,7 @@
 [![Protocol: MCP](https://img.shields.io/badge/Protocol-MCP-5B5BD6)](https://modelcontextprotocol.io/)
 [![Built for ChatGPT](https://img.shields.io/badge/Built%20for-ChatGPT-74AA9C?logo=openai&logoColor=white)](https://chatgpt.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Chatgpt Openclaw Direct Tools on AI Agents Listing](https://aiagentslisting.com/chatgpt-openclaw-direct-tools/badge.svg?claim=39aee4c24782c6ed71abcdc8198410dc)](https://aiagentslisting.com/mcp/chatgpt-openclaw-direct-tools)
 
 **Give ChatGPT direct access to the tools available in your OpenClaw runtime.**
 
