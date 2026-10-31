@@ -10,6 +10,8 @@
 
 **Give ChatGPT direct access to the tools available in your OpenClaw runtime.**
 
+**Works with ChatGPT Free - no paid ChatGPT subscription or OpenClaw Main Agent required.**
+
 **Platform status:** Windows is the currently tested setup. Linux and macOS support has not yet been validated. Contributions and testing reports for additional platforms are welcome. See [Contributing](CONTRIBUTING.md).
 
 Use ChatGPT to work on a local codebase: search files, inspect implementations, edit code, run commands and tests, and review diffs. The bridge also exposes browser, desktop, and other eligible OpenClaw tools through direct wrappers and dynamic tool discovery.
