@@ -35,6 +35,7 @@ test("BrowserAct parameter descriptions explain operation-specific inputs", () =
   assert.match(schema.properties.ref.description, /not inherited from earlier batch actions/i);
   assert.match(schema.properties.selector.description, /not inherited from earlier batch actions/i);
   assert.match(schema.properties.url.description, /kind=wait/i);
+  assert.match(schema.properties.fn.description, /kind=evaluate[\s\S]*function expression[\s\S]*not an immediately invoked function expression \(IIFE\) or its return value/i);
 });
 
 test("Browser description contains only essential usage guidance", () => {

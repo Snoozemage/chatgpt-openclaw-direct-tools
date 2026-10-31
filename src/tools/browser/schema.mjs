@@ -63,7 +63,7 @@ const actProperties = {
   url: string("URL condition for kind=wait. For open/navigate, use targetUrl."),
   loadState: string("Page load state supported by OpenClaw."),
   textGone: string("Wait until this text disappears."),
-  fn: string("Expression for evaluate or a supported wait condition."),
+  fn: string("For kind=evaluate, pass a function expression, not an immediately invoked function expression (IIFE) or its return value. For kind=wait, pass a supported wait condition."),
   timeoutMs: integer("Timeout in milliseconds, where supported by the native action."),
 };
 
