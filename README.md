@@ -235,68 +235,21 @@ When a tool returns a change diff, the monitor can render additions and removals
 openclaw-direct-tools-for-chatgpt/
 ├── src/
 │   ├── config/
-│   │   └── runtime.mjs
-│   ├── mcp/
-│   │   ├── format.mjs
-│   │   ├── instructions.mjs
-│   │   ├── sdk-server.mjs
-│   │   ├── session-registry.mjs
-│   │   ├── tool-definitions.mjs
-│   │   └── tool-dispatcher.mjs
-│   ├── monitor/
-│   │   ├── assets/
-│   │   ├── events.mjs
-│   │   └── index.html
-│   ├── tools/
-│   │   ├── start-here/
-│   │   ├── browser/
-│   │   ├── computer/
-│   │   ├── files/
-│   │   ├── file-search/
-│   │   ├── image-render/
-│   │   ├── runtime/
-│   │   └── tool-discovery/
+│   ├── mcp/                 # MCP server, schemas, and tool routing
+│   ├── monitor/             # Local call monitor
+│   ├── tools/               # Browser, Computer, Files, Runtime, and discovery
 │   ├── openclaw-client.mjs
 │   └── server.mjs
-├── scripts/
-│   └── windows/
-│       ├── setup.ps1
-│       ├── start.ps1
-│       ├── stop.ps1
-│       ├── status.ps1
-│       ├── start-on-logon.ps1
-│       ├── start-monitor.ps1
-│       ├── bridge-supervisor.ps1
-│       ├── credential-store.ps1
-│       └── WindowsCredentialStore.cs
-├── tests/
-│   ├── browser-recovery.test.mjs
-│   ├── browser-schema.test.mjs
-│   ├── chrome-launch.test.mjs
-│   ├── computer-tool.test.mjs
-│   ├── file-search-tool.test.mjs
-│   ├── files-tool.test.mjs
-│   ├── image-render.test.mjs
-│   ├── mcp-session.test.mjs
-│   ├── monitor-events.test.mjs
-│   ├── monitor-redaction.test.mjs
-│   ├── relay-input-epoch.test.mjs
-│   ├── runtime-tools.test.mjs
-│   ├── tool-annotations.test.mjs
-│   ├── tool-discovery.test.mjs
-│   ├── check-syntax.ps1
-│   ├── smoke.ps1
-│   └── windows-credential-store.ps1
-├── docs/
-│   ├── GATEWAY_NODE_COMMAND_REFERENCE.md
-│   └── TOOL_EXPOSURE_GUIDE.md
+├── scripts/windows/         # Setup and lifecycle scripts
+├── tests/                   # Unit and integration tests
+├── docs/                    # Technical guides and screenshots
 ├── package.json
 ├── README.md
 ├── CONTRIBUTING.md
 └── THIRD_PARTY_NOTICES.md
 ```
 
-The public MCP schemas are assembled in `src/mcp/tool-definitions.mjs`; handlers are routed through `src/mcp/tool-dispatcher.mjs`. Each feature family lives under `src/tools/<feature>/`. `docs/TOOL_EXPOSURE_GUIDE.md` describes how to add, change, validate, and remove public tools.
+The MCP server starts in `src/server.mjs`; public tool schemas and routing live in `src/mcp/`, while feature handlers are organized under `src/tools/`. See the [Tool Exposure Guide](docs/TOOL_EXPOSURE_GUIDE.md) for implementation details.
 
 ## Validation
 
