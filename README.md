@@ -16,7 +16,7 @@ Use ChatGPT to work on a local codebase: search files, inspect implementations, 
 
 Unlike a fixed list of bridge-specific tools, the bridge can discover eligible tools in your current OpenClaw runtime, inspect their actual schemas, and dispatch them through the Gateway. OpenClaw permissions, approvals, and policies remain authoritative.
 
-![Browser automation demo](docs/images/browser_use.gif)
+<p><img src="https://raw.githubusercontent.com/Snoozemage/openclaw-direct-tools-for-chatgpt/main/docs/images/browser_use.gif" alt="Browser automation demo" width="100%"></p>
 
 *Browser automation through the bridge.*
 
@@ -162,7 +162,7 @@ For Windows sign-in startup, `scripts/windows/start-on-logon.ps1` is the schedul
 
 Example: the Browser tool opened this public repository, navigated into `src/`, and opened `server.mjs` for inspection.
 
-![Browser automation navigating the repository and opening a source file on GitHub](docs/images/browser-repository-navigation.png)
+<p><img src="https://raw.githubusercontent.com/Snoozemage/openclaw-direct-tools-for-chatgpt/main/docs/images/browser-repository-navigation.png" alt="Browser automation navigating the repository and opening a source file on GitHub" width="100%"></p>
 
 For page interaction, take a fresh snapshot and use its element references where appropriate. The `action: "act"` batch mode combines predictable steps into one native `/act` request; `open`, `navigate`, `snapshot`, and `screenshot` remain separate calls. Page-changing actions can invalidate references, so observe the page again before dependent actions. A batch stops on the first failed step by default; `stopOnError: false` continues. If the runtime rejects a batch, execute the steps individually.
 
@@ -189,8 +189,8 @@ This is OpenClaw configuration, not a bridge setting. Add only trusted, specific
 A successful snapshot also registers a short-lived screenshot reference. Call `openclaw_image_render` with its `screenshot_ref` to display it in ChatGPT. The bridge keeps at most 12 screenshots in memory for up to five minutes; references expire on timeout, cache eviction, or bridge restart. Clients that do not support MCP Apps may show only the text fallback.
 
 <p align="center">
-  <a href="docs/images/chatgpt-shot.jpg">
-    <img src="docs/images/chatgpt-shot.jpg" alt="ChatGPT on a phone requesting a desktop screenshot and displaying the captured screen" width="320">
+  <a href="https://raw.githubusercontent.com/Snoozemage/openclaw-direct-tools-for-chatgpt/main/docs/images/chatgpt-shot.jpg">
+    <img src="https://raw.githubusercontent.com/Snoozemage/openclaw-direct-tools-for-chatgpt/main/docs/images/chatgpt-shot.jpg" alt="ChatGPT on a phone requesting a desktop screenshot and displaying the captured screen" width="320">
   </a>
 </p>
 <p align="center"><em>ChatGPT on a phone requesting a desktop screenshot and displaying the captured screen in the conversation.</em></p>
@@ -219,7 +219,7 @@ The bridge refreshes effective tool availability before dispatch. OpenClaw remai
 
 ## Local call monitor
 
-![Local call monitor overview showing active sessions, tool-call history, and invocation details](docs/images/monitor-overview.png)
+<p><img src="https://raw.githubusercontent.com/Snoozemage/openclaw-direct-tools-for-chatgpt/main/docs/images/monitor-overview.png" alt="Local call monitor overview showing active sessions, tool-call history, and invocation details" width="100%"></p>
 
 The monitor is intended for local development and troubleshooting. It shows running, completed, and failed calls; arguments and output; duration; and diagnostics when available. It supports status filtering, copying a session or individual call as JSON, clearing in-memory history, and removing retained sessions. It retains at most the 200 newest events in memory.
 
@@ -227,7 +227,7 @@ Open it at `http://127.0.0.1:19002/monitor` (the port may differ if reconfigured
 
 When a tool returns a change diff, the monitor can render additions and removals side by side to make edits easier to review.
 
-![Side-by-side diff rendering in the local call monitor](docs/images/monitor-diff-view.png)
+<p><img src="https://raw.githubusercontent.com/Snoozemage/openclaw-direct-tools-for-chatgpt/main/docs/images/monitor-diff-view.png" alt="Side-by-side diff rendering in the local call monitor" width="100%"></p>
 
 ## Repository structure
 
