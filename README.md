@@ -6,6 +6,7 @@
 [![Built for ChatGPT](https://img.shields.io/badge/Built%20for-ChatGPT-74AA9C?logo=openai&logoColor=white)](https://chatgpt.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Chatgpt Openclaw Direct Tools on AI Agents Listing](https://aiagentslisting.com/chatgpt-openclaw-direct-tools/badge.svg?claim=39aee4c24782c6ed71abcdc8198410dc)](https://aiagentslisting.com/mcp/chatgpt-openclaw-direct-tools)
+[![M8ven Score](https://m8ven.ai/badge/mcp/snoozemage-openclaw-direct-tools-for-chatgpt-1my28a?v=a5d33b6edd441c1bd612fe3ef3983bb7)](https://m8ven.ai/mcp/snoozemage-openclaw-direct-tools-for-chatgpt-1my28a?s=readme)
 
 **Give ChatGPT direct access to the tools available in your OpenClaw runtime.**
 
